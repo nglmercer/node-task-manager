@@ -31,4 +31,3 @@ lerna-debug.log*
 #temp | dist optional
 temp/
 tmp/
-dist/ 
