@@ -8,6 +8,9 @@
     "types": [
       "node"
     ],
+    "declaration": true,
+    "declarationMap": true, 
+    "sourceMap": true,
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx",
     "outDir": "./dist"

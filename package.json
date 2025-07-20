@@ -1,6 +1,6 @@
 {
   "name": "node-task-manager",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Un gestor de tareas asíncrono y basado en eventos para Node.js que maneja descargas, backups y restauraciones.",
   "author": "nglmercer@gmail.com",
   "license": "MIT",
@@ -12,7 +12,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/nglmercer/node-task-manager.git"
+    "url": "git+https://github.com/nglmercer/node-task-manager.git"
   },
   "keywords": [
     "task",
@@ -23,7 +23,7 @@
     "backup",
     "node"
   ],
-  "homepage": "https://github.com/nglmercer/node-task-manager#readme", 
+  "homepage": "https://github.com/nglmercer/node-task-manager#readme",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
