@@ -1,0 +1,26 @@
+{
+  "name": "javamanager",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.17.1",
+    "@types/archiver": "^6.0.3",
+    "@types/decompress": "^4.2.7",
+    "@types/tar-stream": "^3.1.4",
+    "archiver": "^7.0.1",
+    "axios": "^1.10.0",
+    "decompress": "^4.2.1",
+    "hono": "^4.8.5",
+    "tar-stream": "^3.1.7",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "tsx": "^4.7.1",
+    "typescript": "^5.8.3"
+  }
+}
