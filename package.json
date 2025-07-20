@@ -1,15 +1,42 @@
 {
-  "name": "javamanager",
+  "name": "node-task-manager",
+  "version": "1.0.0",
+  "description": "Un gestor de tareas asíncrono y basado en eventos para Node.js que maneja descargas, backups y restauraciones.",
+  "author": "nglmercer@gmail.com",
+  "license": "MIT",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nglmercer/node-task-manager.git"
+  },
+  "keywords": [
+    "task",
+    "manager",
+    "async",
+    "events",
+    "download",
+    "backup",
+    "node"
+  ],
+  "homepage": "https://github.com/nglmercer/node-task-manager#readme", 
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js"
   },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "dependencies": {
-    "@types/archiver": "^6.0.3",
-    "@types/decompress": "^4.2.7",
-    "@types/tar-stream": "^3.1.4",
     "archiver": "^7.0.1",
     "axios": "^1.10.0",
     "decompress": "^4.2.1",
@@ -17,7 +44,10 @@
     "uuid": "^11.1.0"
   },
   "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "@types/decompress": "^4.2.7",
     "@types/node": "^20.11.17",
+    "@types/tar-stream": "^3.1.4",
     "tsx": "^4.7.1",
     "typescript": "^5.8.3"
   }
