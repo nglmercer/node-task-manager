@@ -6,8 +6,8 @@ import axios from 'axios';
 import { pipeline } from 'stream/promises';
 import { Emitter } from '../utils/Emitter.js'; // Asumo que tienes un Emitter similar
 import { Task } from './Task.js'; // Asumo que tienes tu clase Task
-import * as CompressionService from './services/CompressionService.js';
-import { TaskStatus, TaskType } from './Types.js';
+import * as CompressionService from '../services/CompressionService.js';
+import { TaskStatus, TaskType } from '../Types.js';
 import type { 
     ITask, 
     DownloadResult, 
@@ -20,7 +20,7 @@ import type {
     RestoreOptions,
     RestoreResult,
     ProgressData
-} from './Types.js';
+} from '../Types.js';
 
 // Función para sanitizar nombres de archivo (del código antiguo)
 function sanitizeFilename(filename: string): string {

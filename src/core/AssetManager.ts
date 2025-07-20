@@ -6,8 +6,8 @@ import decompress from 'decompress';
 import { pipeline } from 'stream/promises';
 import { Emitter } from '../utils/Emitter.js';
 import { Task } from './Task.js';
-import { TaskStatus, TaskType  } from './Types.js';
-import type { ITask, DownloadResult, UnpackResult,AssetManagerOptions,TaskEvents,UnpackOptions } from './Types.js';
+import { TaskStatus, TaskType  } from '../Types.js';
+import type { ITask, DownloadResult, UnpackResult,AssetManagerOptions,TaskEvents,UnpackOptions } from '../Types.js';
 
 export class AssetManager extends Emitter {
     private options: Required<AssetManagerOptions>;

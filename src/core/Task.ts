@@ -1,7 +1,7 @@
 // src/Task.ts
 import { v4 as uuidv4 } from 'uuid';
-import { TaskStatus, TaskType  } from './Types.js';
-import type { ITask, DownloadResult, UnpackResult,ResultsTypes } from './Types.js';
+import { TaskStatus, TaskType  } from '../Types.js';
+import type { ITask, DownloadResult, UnpackResult,ResultsTypes } from '../Types.js';
 
 export class Task implements ITask {
     public id: string;
