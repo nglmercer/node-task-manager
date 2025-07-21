@@ -11,8 +11,9 @@ export class Task {
     result;
     createdAt;
     updatedAt;
-    details = {}; // Detalles adicionales de la tarea
-    constructor(type, payload) {
+    details = {};
+    onCompleteCallback;
+    constructor(type, payload, onCompleteCallback) {
         this.id = uuidv4();
         this.type = type;
         this.payload = payload;
@@ -22,6 +23,7 @@ export class Task {
         this.result = null;
         this.createdAt = new Date();
         this.updatedAt = new Date();
+        this.onCompleteCallback = onCompleteCallback;
     }
     toObject() {
         return {
@@ -34,7 +36,7 @@ export class Task {
             result: this.result,
             createdAt: this.createdAt,
             updatedAt: this.updatedAt,
-            details: {}
+            details: this.details
         };
     }
 }

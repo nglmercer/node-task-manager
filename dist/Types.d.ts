@@ -7,7 +7,7 @@ export declare enum TaskStatus {
 }
 export declare enum TaskType {
     DOWNLOADING = "downloading",
-    UNPACKING = "unpacking",
+    UNPACKING = "unpacking",// MODIFICADO: Añadido para diferenciar de restore
     BACKUP_COMPRESS = "backup_compress",
     BACKUP_RESTORE = "backup_restore"
 }
@@ -17,6 +17,7 @@ export interface DownloadResult {
 }
 export interface UnpackResult {
     unpackDir: string;
+    [key: string]: any;
 }
 export interface BackupResult {
     backupPath: string;
@@ -44,27 +45,35 @@ export interface ITask {
         [key: string]: any;
     };
     error: string | null;
-    result: DownloadResult | UnpackResult | BackupResult | RestoreResult | null;
+    result: ResultsTypes;
     createdAt: Date;
     updatedAt: Date;
 }
+export type OnCompleteCallback<T> = (result: T, task: ITask) => void;
 export interface AssetManagerOptions {
     downloadPath: string;
     unpackPath: string;
     backupPath: string;
 }
+export interface DownloadOptions {
+    fileName?: string;
+    onComplete?: OnCompleteCallback<DownloadResult>;
+}
 export interface UnpackOptions {
     destination?: string;
     deleteAfterUnpack?: boolean;
+    onComplete?: OnCompleteCallback<UnpackResult>;
 }
 export interface BackupOptions {
     outputFilename?: string;
     useZip?: boolean;
     compressionLevel?: number;
     exclude?: string[];
+    onComplete?: OnCompleteCallback<BackupResult>;
 }
 export interface RestoreOptions {
     destinationFolderName?: string;
+    onComplete?: OnCompleteCallback<RestoreResult>;
 }
 export type TaskEvents = {
     'task:created': (task: ITask) => void;

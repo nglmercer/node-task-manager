@@ -7,6 +7,7 @@ import { Emitter } from '../utils/Emitter.js'; // Asumo que tienes un Emitter si
 import { Task } from './Task.js'; // Asumo que tienes tu clase Task
 import * as CompressionService from '../services/CompressionService.js';
 import { TaskStatus, TaskType } from '../Types.js';
+const processPath = (...args) => path.join(process.cwd(), ...args);
 // Función para sanitizar nombres de archivo (del código antiguo)
 function sanitizeFilename(filename) {
     if (!filename || typeof filename !== 'string')
@@ -17,9 +18,9 @@ export class TaskManager extends Emitter {
     options;
     tasks = new Map();
     constructor(options = {
-        downloadPath: './downloads',
-        unpackPath: './unpacked',
-        backupPath: './backups',
+        downloadPath: processPath('./downloads'),
+        unpackPath: processPath('./unpacked'),
+        backupPath: processPath('./backups'),
     }) {
         super();
         this.options = {
@@ -34,8 +35,8 @@ export class TaskManager extends Emitter {
         return super.on(event, listener);
     }
     // --- Métodos de gestión de Tareas (privados) ---
-    _createTask(type, payload) {
-        const task = new Task(type, payload);
+    _createTask(type, payload, onComplete) {
+        const task = new Task(type, payload, onComplete);
         this.tasks.set(task.id, task);
         this.emit('task:created', task.toObject());
         return task;
@@ -56,7 +57,19 @@ export class TaskManager extends Emitter {
         task.progress = 100;
         task.result = result;
         task.updatedAt = new Date();
-        this.emit('task:completed', task.toObject());
+        const taskObject = task.toObject();
+        this.emit('task:completed', taskObject);
+        // NUEVO: Lógica para ejecutar el callback onComplete.
+        if (task.onCompleteCallback && typeof task.onCompleteCallback === 'function') {
+            try {
+                // Se ejecuta de forma asíncrona para no bloquear el flujo principal.
+                setTimeout(() => task.onCompleteCallback(result, taskObject), 0);
+            }
+            catch (e) {
+                console.error(`Error executing onComplete callback for task ${task.id}:`, e);
+                // Opcional: podrías emitir un evento 'task:callback_error'
+            }
+        }
     }
     _failTask(task, error) {
         task.status = TaskStatus.FAILED;
@@ -76,7 +89,7 @@ export class TaskManager extends Emitter {
     async download(url, options = {}) {
         const fileName = options.fileName || path.basename(new URL(url).pathname);
         const filePath = path.join(this.options.downloadPath, fileName);
-        const task = this._createTask(TaskType.DOWNLOADING, { url, filePath, fileName });
+        const task = this._createTask(TaskType.DOWNLOADING, { url, filePath, fileName }, options.onComplete);
         this._executeDownload(task).catch(error => this._failTask(task, error));
         return task.id;
     }
@@ -107,7 +120,7 @@ export class TaskManager extends Emitter {
         const defaultFilename = `${sanitizeFilename(baseFolderName)}-${new Date().toISOString().replace(/:/g, '-')}${extension}`;
         const finalFilename = options.outputFilename ? sanitizeFilename(options.outputFilename) : defaultFilename;
         const backupPath = path.join(this.options.backupPath, finalFilename);
-        const task = this._createTask(TaskType.BACKUP_COMPRESS, { sourcePath, backupPath, options });
+        const task = this._createTask(TaskType.BACKUP_COMPRESS, { sourcePath, backupPath, options }, options.onComplete);
         this._executeBackup(task).catch(error => this._failTask(task, error));
         return task.id;
     }
@@ -127,7 +140,7 @@ export class TaskManager extends Emitter {
         const defaultDestFolder = archiveName.replace(/\.(zip|tar\.gz|gz|7z)$/i, '');
         const destinationFolderName = options.destinationFolderName || defaultDestFolder;
         const destinationPath = path.join(this.options.unpackPath, sanitizeFilename(destinationFolderName));
-        const task = this._createTask(TaskType.BACKUP_RESTORE, { archivePath, destinationPath, options });
+        const task = this._createTask(TaskType.BACKUP_RESTORE, { archivePath, destinationPath, options }, options.onComplete);
         this._executeRestore(task).catch(error => this._failTask(task, error));
         return task.id;
     }
@@ -143,9 +156,26 @@ export class TaskManager extends Emitter {
     }
     // --- Lógica de Descompresión Genérica (Usa la misma lógica que restaurar) ---
     async unpack(archivePath, options = {}) {
-        const destination = options.destination ? path.join(this.options.unpackPath, options.destination) : undefined;
-        // Reutilizamos la lógica de restauración, ya que es esencialmente lo mismo
-        return this.restoreBackup(archivePath, { destinationFolderName: destination });
+        const archiveName = path.basename(archivePath);
+        const defaultUnpackDir = archiveName.replace(/\.(zip|tar\.gz|gz|7z)$/i, '');
+        const unpackDirName = options.destination || defaultUnpackDir;
+        const unpackPath = path.join(this.options.unpackPath, sanitizeFilename(unpackDirName));
+        const task = this._createTask(TaskType.UNPACKING, { archivePath, unpackPath, options }, options.onComplete);
+        this._executeUnpack(task).catch(error => this._failTask(task, error));
+        return task.id;
+    }
+    async _executeUnpack(task) {
+        this._startTask(task);
+        const { archivePath, unpackPath, options } = task.payload;
+        await fs.promises.mkdir(unpackPath, { recursive: true });
+        const progressCallback = (progressData) => {
+            this._updateTaskProgress(task, progressData);
+        };
+        const files = await CompressionService.decompressArchive(archivePath, unpackPath, { progressCallback });
+        if (options.deleteAfterUnpack) {
+            await fs.promises.unlink(archivePath);
+        }
+        this._completeTask(task, { unpackDir: unpackPath, files });
     }
 }
 //# sourceMappingURL=TaskManager.js.map

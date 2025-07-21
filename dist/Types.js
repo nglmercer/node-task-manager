@@ -1,4 +1,4 @@
-// src/types.ts
+// src/Types.ts
 // --- ENUMS ---
 export var TaskStatus;
 (function (TaskStatus) {
@@ -13,7 +13,6 @@ export var TaskType;
 (function (TaskType) {
     TaskType["DOWNLOADING"] = "downloading";
     TaskType["UNPACKING"] = "unpacking";
-    // Nuevos tipos de tarea
     TaskType["BACKUP_COMPRESS"] = "backup_compress";
     TaskType["BACKUP_RESTORE"] = "backup_restore";
 })(TaskType || (TaskType = {}));

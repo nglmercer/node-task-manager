@@ -19,9 +19,11 @@ import type {
     BackupResult,
     RestoreOptions,
     RestoreResult,
-    ProgressData
+    ProgressData,
+    DownloadOptions, // NUEVO: Importamos el tipo de opciones
+    OnCompleteCallback // NUEVO: Importamos el tipo de callback
 } from '../Types.js';
-
+const processPath = (...args: string[]) => path.join(process.cwd(), ...args);
 // Función para sanitizar nombres de archivo (del código antiguo)
 function sanitizeFilename(filename: string): string {
     if (!filename || typeof filename !== 'string') return 'invalid_name';
@@ -33,9 +35,9 @@ export class TaskManager extends Emitter {
     private tasks: Map<string, Task> = new Map();
 
     constructor(options: AssetManagerOptions = {
-        downloadPath: './downloads',
-        unpackPath: './unpacked',
-        backupPath: './backups',
+        downloadPath: processPath('./downloads'),
+        unpackPath: processPath('./unpacked'),
+        backupPath: processPath('./backups'),
     }) {
         super();
         this.options = {
@@ -54,8 +56,8 @@ export class TaskManager extends Emitter {
     
     // --- Métodos de gestión de Tareas (privados) ---
 
-    private _createTask(type: TaskType, payload: { [key: string]: any }): Task {
-        const task = new Task(type, payload);
+    private _createTask(type: TaskType, payload: { [key: string]: any }, onComplete?: OnCompleteCallback<any>): Task {
+        const task = new Task(type, payload, onComplete);
         this.tasks.set(task.id, task);
         this.emit('task:created', task.toObject());
         return task;
@@ -79,7 +81,19 @@ export class TaskManager extends Emitter {
         task.progress = 100;
         task.result = result;
         task.updatedAt = new Date();
-        this.emit('task:completed', task.toObject());
+        const taskObject = task.toObject();
+        this.emit('task:completed', taskObject);
+
+        // NUEVO: Lógica para ejecutar el callback onComplete.
+        if (task.onCompleteCallback && typeof task.onCompleteCallback === 'function') {
+            try {
+                // Se ejecuta de forma asíncrona para no bloquear el flujo principal.
+                setTimeout(() => task.onCompleteCallback!(result, taskObject), 0);
+            } catch (e) {
+                console.error(`Error executing onComplete callback for task ${task.id}:`, e);
+                // Opcional: podrías emitir un evento 'task:callback_error'
+            }
+        }
     }
 
     private _failTask(task: Task, error: Error): void {
@@ -102,10 +116,14 @@ export class TaskManager extends Emitter {
 
     // --- Lógica de Descarga ---
 
-    public async download(url: string, options: { fileName?: string } = {}): Promise<string> {
+    public async download(url: string, options: DownloadOptions = {}): Promise<string> {
         const fileName = options.fileName || path.basename(new URL(url).pathname);
         const filePath = path.join(this.options.downloadPath, fileName);
-        const task = this._createTask(TaskType.DOWNLOADING, { url, filePath, fileName });
+        const task = this._createTask(
+            TaskType.DOWNLOADING,
+            { url, filePath, fileName },
+            options.onComplete
+        );
         this._executeDownload(task).catch(error => this._failTask(task, error));
         return task.id;
     }
@@ -144,7 +162,11 @@ export class TaskManager extends Emitter {
         const finalFilename = options.outputFilename ? sanitizeFilename(options.outputFilename) : defaultFilename;
         const backupPath = path.join(this.options.backupPath, finalFilename);
 
-        const task = this._createTask(TaskType.BACKUP_COMPRESS, { sourcePath, backupPath, options });
+        const task = this._createTask(
+            TaskType.BACKUP_COMPRESS,
+            { sourcePath, backupPath, options },
+            options.onComplete
+        );
         this._executeBackup(task).catch(error => this._failTask(task, error));
         return task.id;
     }
@@ -171,7 +193,11 @@ export class TaskManager extends Emitter {
         const destinationFolderName = options.destinationFolderName || defaultDestFolder;
         const destinationPath = path.join(this.options.unpackPath, sanitizeFilename(destinationFolderName));
 
-        const task = this._createTask(TaskType.BACKUP_RESTORE, { archivePath, destinationPath, options });
+        const task = this._createTask(
+            TaskType.BACKUP_RESTORE,
+            { archivePath, destinationPath, options },
+            options.onComplete
+        );
         this._executeRestore(task).catch(error => this._failTask(task, error));
         return task.id;
     }
@@ -194,9 +220,39 @@ export class TaskManager extends Emitter {
     // --- Lógica de Descompresión Genérica (Usa la misma lógica que restaurar) ---
 
     public async unpack(archivePath: string, options: UnpackOptions = {}): Promise<string> {
-        const destination = options.destination ? path.join(this.options.unpackPath, options.destination) : undefined;
+        const archiveName = path.basename(archivePath);
+        const defaultUnpackDir = archiveName.replace(/\.(zip|tar\.gz|gz|7z)$/i, '');
+        const unpackDirName = options.destination || defaultUnpackDir;
+        const unpackPath = path.join(this.options.unpackPath, sanitizeFilename(unpackDirName));
 
-        // Reutilizamos la lógica de restauración, ya que es esencialmente lo mismo
-        return this.restoreBackup(archivePath, { destinationFolderName: destination });
+        const task = this._createTask(
+            TaskType.UNPACKING,
+            { archivePath, unpackPath, options },
+            options.onComplete
+        );
+        this._executeUnpack(task).catch(error => this._failTask(task, error));
+        return task.id;
+    }
+    private async _executeUnpack(task: Task): Promise<void> {
+        this._startTask(task);
+        const { archivePath, unpackPath, options } = task.payload as {
+            archivePath: string;
+            unpackPath: string;
+            options: UnpackOptions;
+        };
+
+        await fs.promises.mkdir(unpackPath, { recursive: true });
+        
+        const progressCallback = (progressData: ProgressData) => {
+            this._updateTaskProgress(task, progressData);
+        };
+
+        const files = await CompressionService.decompressArchive(archivePath, unpackPath, { progressCallback });
+        
+        if (options.deleteAfterUnpack) {
+            await fs.promises.unlink(archivePath);
+        }
+
+        this._completeTask(task, { unpackDir: unpackPath, files } as UnpackResult);
     }
 }
