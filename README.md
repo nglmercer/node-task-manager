@@ -3,89 +3,89 @@
 [![NPM version](https://img.shields.io/npm/v/node-task-manager.svg?style=flat)](https://www.npmjs.com/package/node-task-manager)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Un gestor de tareas asíncrono, robusto y basado en eventos para Node.js, diseñado para manejar operaciones de larga duración como descargas, compresión de archivos (backups) y descompresión (restauración) de forma sencilla y con reporte de progreso.
+A robust, event-driven, asynchronous task manager for Node.js, designed to easily handle long-running operations like downloads, file compression (backups), and decompression (restoration) with progress reporting.
+### Documentation in spanish [README.es.md](https://github.com/nglmercer/node-task-manager/blob/main/README.es.md)
+## Features
 
-## Características
+- **Asynchronous Task Management**: Fire and forget. The manager handles the rest.
+- **Event-Driven**: Subscribe to events (`task:created`, `task:progress`, `task:completed`, `task:failed`) to monitor the lifecycle of each task.
+- **File Downloads**: Download files from a URL with progress reporting.
+- **Backups (Compression)**: Easily compress directories into `.zip` or `.tar.gz` format.
+- **Restoration (Decompression)**: Decompress `.zip` and `.tar.gz` files to a specific destination.
+- **Detailed Progress Reporting**: Get percentages, processed bytes, and the current file being processed.
+- **Written in TypeScript**: Fully typed for a better development experience.
 
-- **Gestión de Tareas Asíncronas**: Crea y olvídate. El gestor se encarga del resto.
-- **Basado en Eventos**: Suscríbete a eventos (`task:created`, `task:progress`, `task:completed`, `task:failed`) para monitorizar el ciclo de vida de cada tarea.
-- **Descarga de Archivos**: Descarga archivos desde una URL con reporte de progreso.
-- **Backups (Compresión)**: Comprime directorios fácilmente a formato `.zip` o `.tar.gz`.
-- **Restauración (Descompresión)**: Descomprime archivos `.zip` y `.tar.gz` en un destino específico.
-- **Reporte de Progreso Detallado**: Obtén porcentajes, bytes procesados y el archivo actual en procesamiento.
-- **Escrito en TypeScript**: Totalmente tipado para una mejor experiencia de desarrollo.
-
-## Instalación
+## Installation
 
 ```bash
 npm install node-task-manager axios archiver tar-stream
 ```
 
-**Nota:** `axios`, `archiver` y `tar-stream` son dependencias de pares (`peerDependencies`) y deben ser instaladas en tu proyecto. Para la descompresión de archivos `.zip`, también necesitarás `decompress`:
+**Note:** `axios`, `archiver`, and `tar-stream` are peer dependencies and must be installed in your project. For decompressing `.zip` files, you will also need `decompress`:
 ```bash
 npm install decompress
 ```
 
 
-## Uso Básico
+## Basic Usage
 
-Aquí tienes un ejemplo completo de cómo usar el `TaskManager`.
+Here is a complete example of how to use the `TaskManager`.
 
 ```typescript
 // example.ts
-import { TaskManager } from 'node-task-manager'; // Así lo importarías en tu proyecto
+import { TaskManager } from 'node-task-manager'; // How you would import it in your project
 import type { ITask } from 'node-task-manager';
 import fs from 'fs';
 import path from 'path';
 
-// --- Directorios de prueba ---
+// --- Test Directories ---
 const SOURCE_DIR = './temp/my_server_data';
 const DOWNLOADS_DIR = './temp/downloads';
 const UNPACK_DIR = './temp/servers';
 const BACKUPS_DIR = './temp/backups';
 
-// --- Función de ayuda para esperar un poco ---
+// --- Helper function to wait a bit ---
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// --- Función principal asíncrona ---
+// --- Main async function ---
 async function main() {
-    console.log('--- Iniciando Demo de TaskManager ---');
+    console.log('--- Starting TaskManager Demo ---');
 
-    // 1. Limpiar y preparar directorios de prueba
+    // 1. Clean up and prepare test directories
     fs.rmSync('./temp', { recursive: true, force: true });
     fs.mkdirSync(SOURCE_DIR, { recursive: true });
     fs.writeFileSync(path.join(SOURCE_DIR, 'config.json'), '{ "port": 8080 }');
     fs.writeFileSync(path.join(SOURCE_DIR, 'README.md'), 'This is my server data.');
 
-    // 2. Instanciar el TaskManager
+    // 2. Instantiate the TaskManager
     const taskManager = new TaskManager({
         downloadPath: DOWNLOADS_DIR,
         unpackPath: UNPACK_DIR,
         backupPath: BACKUPS_DIR,
     });
 
-    // 3. Configurar los listeners de eventos
-    taskManager.on('task:created', (task: ITask) => console.log(`[CREATED] Tarea ${task.id} (${task.type}) creada.`));
-    taskManager.on('task:started', (task: ITask) => console.log(`[STARTED] Tarea ${task.id} iniciada.`));
-    taskManager.on('task:failed', (task: ITask) => console.error(`[FAILED] Tarea ${task.id}: ${task.error}`));
+    // 3. Set up event listeners
+    taskManager.on('task:created', (task: ITask) => console.log(`[CREATED] Task ${task.id} (${task.type}) created.`));
+    taskManager.on('task:started', (task: ITask) => console.log(`[STARTED] Task ${task.id} started.`));
+    taskManager.on('task:failed', (task: ITask) => console.error(`[FAILED] Task ${task.id}: ${task.error}`));
     taskManager.on('task:completed', (task: ITask) => {
-        console.log(`✅ [COMPLETED] Tarea ${task.id} finalizada con éxito!`);
-        console.log('   Resultado:', task.result);
+        console.log(`✅ [COMPLETED] Task ${task.id} finished successfully!`);
+        console.log('   Result:', task.result);
     });
     taskManager.on('task:progress', (task: ITask) => {
-        const progressDetails = task.details.currentFile ? ` - Archivo: ${path.basename(task.details.currentFile as string)}` : '';
-        console.log(`[PROGRESS] Tarea ${task.id} (${task.type}): ${task.progress.toFixed(0)}%${progressDetails}`);
+        const progressDetails = task.details.currentFile ? ` - File: ${path.basename(task.details.currentFile as string)}` : '';
+        console.log(`[PROGRESS] Task ${task.id} (${task.type}): ${task.progress.toFixed(0)}%${progressDetails}`);
     });
 
-    // 4. Ejecutar Tarea: Crear un Backup
-    console.log('\n[Paso 2] Creando un backup del directorio de prueba...');
+    // 4. Execute Task: Create a Backup
+    console.log('\n[Step 2] Creating a backup of the test directory...');
     const backupTaskId = await taskManager.createBackup(SOURCE_DIR, {
         outputFilename: 'server-backup.zip',
         useZip: true,
     });
-    await sleep(2000); // En una app real, manejarías la finalización con el evento 'task:completed'
+    await sleep(2000); // In a real app, you would handle completion with the 'task:completed' event
 
-    // 5. Ejecutar Tarea: Restaurar el Backup
+    // 5. Execute Task: Restore the Backup
     const backupResult = taskManager.getTask(backupTaskId)?.result as any;
     if (backupResult?.backupPath) {
         await taskManager.restoreBackup(backupResult.backupPath, {
@@ -94,14 +94,14 @@ async function main() {
         await sleep(2000);
     }
 
-    // 6. Ejecutar Tarea: Descargar un archivo
+    // 6. Execute Task: Download a file
     const downloadUrl = 'https://file-examples.com/storage/fe52cb0bf1943583f3a562d/2017/02/zip_2MB.zip';
     await taskManager.download(downloadUrl);
-    await sleep(5000); // Esperar a que la descarga termine
+    await sleep(5000); // Wait for the download to finish
 
-    console.log('\n--- Demo Finalizada ---');
-    console.log('\nRevisa los directorios en la carpeta "temp" para ver los resultados.');
-    console.log('\nListado de todas las tareas ejecutadas:');
+    console.log('\n--- Demo Finished ---');
+    console.log('\nCheck the directories in the "temp" folder to see the results.');
+    console.log('\nList of all executed tasks:');
     console.table(taskManager.getAllTasks());
 }
 
@@ -111,34 +111,34 @@ main().catch(console.error);
 ## API
 
 ### `new TaskManager(options)`
-Crea una nueva instancia del gestor.
+Creates a new manager instance.
 
 - `options` `<object>`
-  - `downloadPath` `<string>` Directorio para guardar archivos descargados.
-  - `unpackPath` `<string>` Directorio para descomprimir archivos.
-  - `backupPath` `<string>` Directorio para guardar los backups.
+  - `downloadPath` `<string>` Directory to save downloaded files.
+  - `unpackPath` `<string>` Directory to decompress files.
+  - `backupPath` `<string>` Directory to save backups.
 
-### Eventos
-El `taskManager` emite los siguientes eventos. Todos reciben un objeto `ITask` como argumento.
+### Events
+The `taskManager` emits the following events. All of them receive an `ITask` object as an argument.
 
-- `task:created`: Se emite cuando una nueva tarea es creada.
-- `task:started`: Se emite cuando una tarea comienza su ejecución.
-- `task:progress`: Se emite periódicamente durante la ejecución de una tarea.
-- `task:completed`: Se emite cuando una tarea finaliza con éxito.
-- `task:failed`: Se emite si una tarea falla.
+- `task:created`: Emitted when a new task is created.
+- `task:started`: Emitted when a task starts its execution.
+- `task:progress`: Emitted periodically during a task's execution.
+- `task:completed`: Emitted when a task finishes successfully.
+- `task:failed`: Emitted if a task fails.
 
-### Métodos
+### Methods
 
-- `async createBackup(sourcePath, options)`: Comprime un directorio. Devuelve el `taskId`.
-- `async restoreBackup(archivePath, options)`: Descomprime un archivo. Devuelve el `taskId`.
-- `async download(url, options)`: Descarga un archivo. Devuelve el `taskId`.
-- `async unpack(archivePath, options)`: Alias para `restoreBackup`. Devuelve el `taskId`.
-- `getTask(taskId)`: Devuelve el objeto de una tarea por su ID, o `null` si no existe.
-- `getAllTasks()`: Devuelve un array con todas las tareas gestionadas.
+- `async createBackup(sourcePath, options)`: Compresses a directory. Returns the `taskId`.
+- `async restoreBackup(archivePath, options)`: Decompresses an archive file. Returns the `taskId`.
+- `async download(url, options)`: Downloads a file. Returns the `taskId`.
+- `async unpack(archivePath, options)`: Alias for `restoreBackup`. Returns the `taskId`.
+- `getTask(taskId)`: Returns the task object by its ID, or `null` if it doesn't exist.
+- `getAllTasks()`: Returns an array with all managed tasks.
 
-## Tipos
-El paquete exporta todas las interfaces y enums necesarios para una integración completa con TypeScript, incluyendo `ITask`, `TaskStatus`, `TaskType`, etc.
+## Types
+The package exports all the necessary interfaces and enums for a full TypeScript integration, including `ITask`, `TaskStatus`, `TaskType`, etc.
 
-## Licencia
+## License
 
 [MIT](LICENSE)
