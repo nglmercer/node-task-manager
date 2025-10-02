@@ -3,141 +3,309 @@
 [![NPM version](https://img.shields.io/npm/v/node-task-manager.svg?style=flat)](https://www.npmjs.com/package/node-task-manager)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A robust, event-driven, asynchronous task manager for Node.js, designed to easily handle long-running operations like downloads, file compression (backups), and decompression (restoration) with progress reporting.
-### Documentation in spanish [README.es.md](https://github.com/nglmercer/node-task-manager/blob/main/README.es.md)
+A robust, event-driven, asynchronous task manager for Node.js, designed to easily handle long-running operations like downloads, file compression (backups), and decompression (restoration) with progress reporting and Promise support.
+
+### Documentation in Spanish: [README.es.md](https://github.com/nglmercer/node-task-manager/blob/main/README.es.md)
+
 ## Features
 
-- **Asynchronous Task Management**: Fire and forget. The manager handles the rest.
-- **Event-Driven**: Subscribe to events (`task:created`, `task:progress`, `task:completed`, `task:failed`) to monitor the lifecycle of each task.
-- **File Downloads**: Download files from a URL with progress reporting.
-- **Backups (Compression)**: Easily compress directories into `.zip` or `.tar.gz` format.
-- **Restoration (Decompression)**: Decompress `.zip` and `.tar.gz` files to a specific destination.
-- **Detailed Progress Reporting**: Get percentages, processed bytes, and the current file being processed.
-- **Written in TypeScript**: Fully typed for a better development experience.
+- **Promise-Based API**: All operations return promises for modern async/await workflows
+- **Asynchronous Task Management**: Fire and forget or await results - your choice
+- **Event-Driven**: Subscribe to events (`task:created`, `task:progress`, `task:completed`, `task:failed`) to monitor task lifecycle
+- **File Downloads**: Download files from URLs with progress reporting
+- **Backups (Compression)**: Compress directories into `.zip` or `.tar.gz` format
+- **Restoration (Decompression)**: Decompress `.zip` and `.tar.gz` files
+- **Detailed Progress Reporting**: Get percentages, processed bytes, and current file being processed
+- **Optimized for Large Files**: Memory-efficient streaming for multi-GB archives
+- **Written in TypeScript**: Fully typed for better development experience
 
 ## Installation
 
 ```bash
-npm install node-task-manager axios archiver tar-stream
+npm install node-task-manager
 ```
 
-**Note:** `axios`, `archiver`, and `tar-stream` are peer dependencies and must be installed in your project. For decompressing `.zip` files, you will also need `decompress`:
-```bash
-npm install decompress
-```
+The package includes all necessary dependencies for compression and decompression operations.
 
-
-## Basic Usage
-
-Here is a complete example of how to use the `TaskManager`.
+## Basic Usage (Promise-Based)
 
 ```typescript
-// example.ts
-import { TaskManager } from 'node-task-manager'; // How you would import it in your project
-import type { ITask } from 'node-task-manager';
+import { TaskManager } from 'node-task-manager';
+import type { BackupResult, RestoreResult } from 'node-task-manager';
 import fs from 'fs';
 import path from 'path';
 
-// --- Test Directories ---
-const SOURCE_DIR = './temp/my_server_data';
-const DOWNLOADS_DIR = './temp/downloads';
-const UNPACK_DIR = './temp/servers';
-const BACKUPS_DIR = './temp/backups';
-
-// --- Helper function to wait a bit ---
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-// --- Main async function ---
 async function main() {
-    console.log('--- Starting TaskManager Demo ---');
-
-    // 1. Clean up and prepare test directories
-    fs.rmSync('./temp', { recursive: true, force: true });
-    fs.mkdirSync(SOURCE_DIR, { recursive: true });
-    fs.writeFileSync(path.join(SOURCE_DIR, 'config.json'), '{ "port": 8080 }');
-    fs.writeFileSync(path.join(SOURCE_DIR, 'README.md'), 'This is my server data.');
-
-    // 2. Instantiate the TaskManager
+    // 1. Create TaskManager instance
     const taskManager = new TaskManager({
-        downloadPath: DOWNLOADS_DIR,
-        unpackPath: UNPACK_DIR,
-        backupPath: BACKUPS_DIR,
+        downloadPath: './downloads',
+        unpackPath: './servers',
+        backupPath: './backups',
     });
 
-    // 3. Set up event listeners
-    taskManager.on('task:created', (task: ITask) => console.log(`[CREATED] Task ${task.id} (${task.type}) created.`));
-    taskManager.on('task:started', (task: ITask) => console.log(`[STARTED] Task ${task.id} started.`));
-    taskManager.on('task:failed', (task: ITask) => console.error(`[FAILED] Task ${task.id}: ${task.error}`));
-    taskManager.on('task:completed', (task: ITask) => {
-        console.log(`✅ [COMPLETED] Task ${task.id} finished successfully!`);
-        console.log('   Result:', task.result);
-    });
-    taskManager.on('task:progress', (task: ITask) => {
-        const progressDetails = task.details.currentFile ? ` - File: ${path.basename(task.details.currentFile as string)}` : '';
-        console.log(`[PROGRESS] Task ${task.id} (${task.type}): ${task.progress.toFixed(0)}%${progressDetails}`);
+    // 2. Set up event listeners (optional)
+    taskManager.on('task:progress', (task) => {
+        console.log(`Progress: ${task.progress}% - ${task.details.currentFile || ''}`);
     });
 
-    // 4. Execute Task: Create a Backup
-    console.log('\n[Step 2] Creating a backup of the test directory...');
-    const backupTaskId = await taskManager.createBackup(SOURCE_DIR, {
+    // 3. Create backup (Promise-based)
+    const { taskId, promise } = taskManager.createBackup('./my_server_data', {
         outputFilename: 'server-backup.zip',
         useZip: true,
     });
-    await sleep(2000); // In a real app, you would handle completion with the 'task:completed' event
 
-    // 5. Execute Task: Restore the Backup
-    const backupResult = taskManager.getTask(backupTaskId)?.result as any;
-    if (backupResult?.backupPath) {
-        await taskManager.restoreBackup(backupResult.backupPath, {
-            destinationFolderName: 'my-restored-server',
-        });
-        await sleep(2000);
-    }
+    console.log('Backup started with task ID:', taskId);
+    
+    // Wait for completion
+    const backupResult = await promise;
+    console.log('Backup completed:', backupResult.backupPath);
 
-    // 6. Execute Task: Download a file
-    const downloadUrl = 'https://file-examples.com/storage/fe52cb0bf1943583f3a562d/2017/02/zip_2MB.zip';
-    await taskManager.download(downloadUrl);
-    await sleep(5000); // Wait for the download to finish
+    // 4. Restore backup
+    const { promise: restorePromise } = taskManager.restoreBackup(
+        backupResult.backupPath,
+        { destinationFolderName: 'restored-server' }
+    );
 
-    console.log('\n--- Demo Finished ---');
-    console.log('\nCheck the directories in the "temp" folder to see the results.');
-    console.log('\nList of all executed tasks:');
-    console.table(taskManager.getAllTasks());
+    const restoreResult = await restorePromise;
+    console.log('Restored to:', restoreResult.destinationPath);
+
+    // 5. Download a file
+    const { promise: downloadPromise } = taskManager.download(
+        'https://example.com/file.zip'
+    );
+
+    const downloadResult = await downloadPromise;
+    console.log('Downloaded to:', downloadResult.filePath);
 }
 
 main().catch(console.error);
 ```
 
-## API
+## Advanced Usage
 
-### `new TaskManager(options)`
-Creates a new manager instance.
+### Multiple Operations in Parallel
 
-- `options` `<object>`
-  - `downloadPath` `<string>` Directory to save downloaded files.
-  - `unpackPath` `<string>` Directory to decompress files.
-  - `backupPath` `<string>` Directory to save backups.
+```typescript
+// Run multiple backups simultaneously
+const operations = [
+    taskManager.createBackup('./data1', { outputFilename: 'backup1.zip' }),
+    taskManager.createBackup('./data2', { outputFilename: 'backup2.zip' }),
+    taskManager.createBackup('./data3', { outputFilename: 'backup3.zip' }),
+];
 
-### Events
-The `taskManager` emits the following events. All of them receive an `ITask` object as an argument.
+// Wait for all to complete
+const results = await Promise.all(operations.map(op => op.promise));
+console.log('All backups completed:', results);
+```
 
-- `task:created`: Emitted when a new task is created.
-- `task:started`: Emitted when a task starts its execution.
-- `task:progress`: Emitted periodically during a task's execution.
-- `task:completed`: Emitted when a task finishes successfully.
-- `task:failed`: Emitted if a task fails.
+### Handle Partial Failures
+
+```typescript
+const operations = [
+    taskManager.createBackup('./valid-path', { outputFilename: 'success.zip' }),
+    taskManager.createBackup('/invalid/path', { outputFilename: 'fail.zip' }),
+];
+
+const results = await Promise.allSettled(operations.map(op => op.promise));
+
+results.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+        console.log(`Operation ${index} succeeded:`, result.value);
+    } else {
+        console.error(`Operation ${index} failed:`, result.reason);
+    }
+});
+```
+
+### Sequential Operations
+
+```typescript
+// Backup -> Restore -> Verify workflow
+const backup = await taskManager.createBackup('./source').promise;
+const restore = await taskManager.restoreBackup(backup.backupPath).promise;
+console.log('Workflow completed!');
+```
+
+### Using Callbacks (Legacy Support)
+
+```typescript
+taskManager.createBackup('./data', {
+    outputFilename: 'backup.zip',
+    onComplete: (result, task) => {
+        console.log('Backup completed via callback:', result);
+    }
+});
+```
+
+### Wait for Task by ID
+
+```typescript
+const { taskId } = taskManager.createBackup('./data');
+
+// Later, wait for this specific task
+const result = await taskManager.waitForTask<BackupResult>(taskId);
+console.log('Task completed:', result);
+```
+
+## API Reference
+
+### Constructor
+
+```typescript
+new TaskManager(options?: AssetManagerOptions)
+```
+
+**Options:**
+- `downloadPath` (string): Directory for downloaded files (default: `./downloads`)
+- `unpackPath` (string): Directory for decompressed files (default: `./unpacked`)
+- `backupPath` (string): Directory for backup archives (default: `./backups`)
 
 ### Methods
 
-- `async createBackup(sourcePath, options)`: Compresses a directory. Returns the `taskId`.
-- `async restoreBackup(archivePath, options)`: Decompresses an archive file. Returns the `taskId`.
-- `async download(url, options)`: Downloads a file. Returns the `taskId`.
-- `async unpack(archivePath, options)`: Alias for `restoreBackup`. Returns the `taskId`.
-- `getTask(taskId)`: Returns the task object by its ID, or `null` if it doesn't exist.
-- `getAllTasks()`: Returns an array with all managed tasks.
+All methods return `TaskOperation<T>` with structure:
+```typescript
+{
+    taskId: string;      // Unique task identifier
+    promise: Promise<T>; // Promise that resolves with result
+}
+```
 
-## Types
-The package exports all the necessary interfaces and enums for a full TypeScript integration, including `ITask`, `TaskStatus`, `TaskType`, etc.
+#### `createBackup(sourcePath, options?)`
+
+Creates a compressed backup of a directory.
+
+**Parameters:**
+- `sourcePath` (string): Path to directory to backup
+- `options` (BackupOptions):
+  - `outputFilename?` (string): Custom filename for backup
+  - `useZip?` (boolean): Use ZIP format (default: `false`, uses TAR.GZ)
+  - `compressionLevel?` (number): 1-9, higher = better compression (default: 6)
+  - `onComplete?` (callback): Legacy callback on completion
+
+**Returns:** `TaskOperation<BackupResult>`
+- `backupPath` (string): Path to created backup file
+- `size` (number): Size in bytes
+
+#### `restoreBackup(archivePath, options?)`
+
+Restores a backup archive to destination.
+
+**Parameters:**
+- `archivePath` (string): Path to backup file
+- `options` (RestoreOptions):
+  - `destinationFolderName?` (string): Custom folder name
+  - `onComplete?` (callback): Legacy callback on completion
+
+**Returns:** `TaskOperation<RestoreResult>`
+- `destinationPath` (string): Path where files were restored
+
+#### `download(url, options?)`
+
+Downloads a file from URL.
+
+**Parameters:**
+- `url` (string): File URL to download
+- `options` (DownloadOptions):
+  - `fileName?` (string): Custom filename (default: from URL)
+  - `onComplete?` (callback): Legacy callback on completion
+
+**Returns:** `TaskOperation<DownloadResult>`
+- `filePath` (string): Path to downloaded file
+- `size` (number): Size in bytes
+
+#### `unpack(archivePath, options?)`
+
+Decompresses an archive (alias for `restoreBackup`).
+
+**Parameters:**
+- `archivePath` (string): Path to archive file
+- `options` (UnpackOptions):
+  - `destination?` (string): Custom destination folder
+  - `deleteAfterUnpack?` (boolean): Delete archive after extraction
+  - `onComplete?` (callback): Legacy callback on completion
+
+**Returns:** `TaskOperation<UnpackResult>`
+- `unpackDir` (string): Path where files were extracted
+- `files?` (string[]): List of extracted files (ZIP only)
+
+#### `waitForTask<T>(taskId)`
+
+Waits for a task to complete and returns its result.
+
+**Parameters:**
+- `taskId` (string): Task identifier
+
+**Returns:** `Promise<T>` - Resolves with task result or rejects on failure
+
+#### `getTask(taskId)`
+
+Retrieves task information by ID.
+
+**Returns:** `ITask | null`
+
+#### `getAllTasks()`
+
+Gets all managed tasks.
+
+**Returns:** `ITask[]`
+
+### Events
+
+Subscribe to events using `taskManager.on(event, callback)`:
+
+- `task:created`: New task created
+- `task:started`: Task execution started
+- `task:progress`: Progress update (throttled to ~100ms)
+- `task:completed`: Task finished successfully
+- `task:failed`: Task failed with error
+
+**Event Payload:** All events receive an `ITask` object containing:
+```typescript
+{
+    id: string;
+    type: TaskType;
+    status: TaskStatus;
+    progress: number;        // 0-100
+    details: {
+        percentage?: number;
+        processedBytes?: number;
+        totalBytes?: number;
+        currentFile?: string;
+    };
+    result: any;            // Filled on completion
+    error: string | null;   // Filled on failure
+    createdAt: Date;
+    updatedAt: Date;
+}
+```
+
+## Performance Considerations
+
+For large files (multiple GB):
+
+1. **Memory Optimization**: The package uses streaming with configurable buffers
+2. **Compression Level**: Use level 6 for best speed/ratio balance
+3. **Node Memory**: For very large operations (10GB+), increase Node memory:
+   ```bash
+   node --max-old-space-size=4096 your-script.js
+   ```
+
+## TypeScript Support
+
+Full TypeScript definitions included:
+
+```typescript
+import type { 
+    ITask,
+    TaskStatus,
+    TaskType,
+    BackupResult,
+    RestoreResult,
+    DownloadResult,
+    UnpackResult,
+    ProgressData
+} from 'node-task-manager';
+```
 
 ## License
 
