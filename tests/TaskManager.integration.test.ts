@@ -5,7 +5,7 @@ import { TaskManager } from '../src/index.js';
 import type { BackupResult, RestoreResult } from '../src/index.js';
 import fs from 'fs';
 import path from 'path';
-import type { TaskStatus } from '../dist/Types.js';
+import type { TaskStatus } from '../src/Types.js';
 
 const TEST_DIR = './test-integration-promise';
 const SOURCE_DIR = path.join(TEST_DIR, 'source');
