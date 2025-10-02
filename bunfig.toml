@@ -1,0 +1,12 @@
+[test]
+# Configuración para los tests de Bun
+# preload = ["./test-setup.ts"]
+timeout = 10000
+
+# Coverage configuration
+coverage = true
+coverageDir = "coverage"
+
+# Test file patterns
+include = ["**/*.test.ts", "**/*.spec.ts"]
+exclude = ["node_modules", "dist"]

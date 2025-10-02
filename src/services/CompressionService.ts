@@ -43,11 +43,12 @@ export async function compressDirectory(sourcePath: string, outputPath: string, 
     return new Promise((resolve, reject) => {
         archive.on('progress', (progress) => {
             if (options.progressCallback) {
+                const entry = (progress as any).entries?.latest;
                 options.progressCallback({
                     percentage: totalSize > 0 ? (progress.fs.processedBytes / totalSize) * 100 : 0,
                     processedBytes: progress.fs.processedBytes,
                     totalBytes: totalSize,
-                    currentFile: (progress as any).entry?.name
+                    currentFile: entry?.name || entry?.sourcePath || undefined
                 });
             }
         });
@@ -98,11 +99,18 @@ export async function decompressArchive(archivePath: string, destinationPath: st
             if (header.type === 'directory') {
                 fs.promises.mkdir(entryPath, { recursive: true }).then(next).catch(reject);
             } else {
-                const writeStream = fs.createWriteStream(entryPath);
-                stream.pipe(writeStream);
-                stream.on('end', next);
-                stream.on('error', reject);
+                // Ensure parent directory exists
+                fs.promises.mkdir(path.dirname(entryPath), { recursive: true })
+                    .then(() => {
+                        const writeStream = fs.createWriteStream(entryPath);
+                        stream.pipe(writeStream);
+                        writeStream.on('finish', next); // Wait for write to complete
+                        writeStream.on('error', reject);
+                        stream.on('error', reject);
+                    })
+                    .catch(reject);
             }
+            stream.resume(); // Important: consume the stream
         });
         
         gunzip.on('data', (chunk) => {
