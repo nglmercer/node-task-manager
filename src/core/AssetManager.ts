@@ -73,13 +73,57 @@ export class AssetManager extends Emitter {
     }
 
     public async download(url: string, options: { fileName?: string } = {}): Promise<string> {
-        const fileName = options.fileName || path.basename(new URL(url).pathname);
+        const fileName = this.resolveFileName(url, options.fileName);
         const filePath = path.join(this.options.downloadPath, fileName);
         const task = this._createTask(TaskType.DOWNLOADING, { url, filePath, fileName });
         this._executeDownload(task).catch(error => this._failTask(task, error));
         return task.id;
     }
 
+    /**
+     * Resuelve el nombre del archivo asegurando que la extensión sea correcta
+     */
+    private resolveFileName(url: string, customFileName?: string): string {
+        const urlObj = new URL(url);
+        const urlPath = urlObj.pathname;
+        
+        // Extraer la extensión real de la URL
+        const realExtension = this.extractExtension(urlPath);
+        
+        if (customFileName) {
+            // Si el usuario proporciona un nombre personalizado
+            const customExt = this.extractExtension(customFileName);
+            const nameWithoutExt = customFileName.replace(new RegExp(`${customExt}$`), '');
+            
+            // Si la extensión personalizada no coincide con la real, usar la real
+            if (customExt !== realExtension && realExtension) {
+                return `${nameWithoutExt}${realExtension}`;
+            }
+            
+            return customFileName;
+        }
+        
+        // Si no hay nombre personalizado, usar el de la URL
+        return path.basename(urlPath);
+    }
+
+    /**
+     * Extrae la extensión completa (incluyendo .tar.gz, .tar.bz2, etc.)
+     */
+    private extractExtension(filename: string): string {
+        // Extensiones compuestas comunes
+        const compoundExtensions = ['.tar.gz', '.tar.bz2', '.tar.xz', '.tar.Z'];
+        
+        for (const ext of compoundExtensions) {
+            if (filename.endsWith(ext)) {
+                return ext;
+            }
+        }
+        
+        // Extensión simple
+        const match = filename.match(/\.[^.]+$/);
+        return match ? match[0] : '';
+    }
     private async _executeDownload(task: Task): Promise<void> {
         task.status = TaskStatus.IN_PROGRESS;
         this.emit('task:started', task.toObject());

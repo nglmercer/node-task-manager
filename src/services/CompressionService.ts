@@ -169,6 +169,39 @@ export async function compressDirectory(
         archive.finalize();
     });
 }
+/**
+ * Detecta el tipo real de archivo leyendo sus magic bytes
+ */
+async function detectFileType(filePath: string): Promise<'zip' | 'gzip' | 'tar' | 'unknown'> {
+    const fd = await fs.promises.open(filePath, 'r');
+    const buffer = Buffer.alloc(10);
+    
+    try {
+        await fd.read(buffer, 0, 10, 0);
+        
+        // ZIP: 50 4B (PK)
+        if (buffer[0] === 0x50 && buffer[1] === 0x4B) {
+            return 'zip';
+        }
+        
+        // GZIP: 1F 8B
+        if (buffer[0] === 0x1F && buffer[1] === 0x8B) {
+            return 'gzip';
+        }
+        
+        // TAR: "ustar" en offset 257
+        const tarBuffer = Buffer.alloc(262);
+        await fd.read(tarBuffer, 0, 262, 0);
+        const ustarSignature = tarBuffer.slice(257, 262).toString('ascii');
+        if (ustarSignature === 'ustar') {
+            return 'tar';
+        }
+        
+        return 'unknown';
+    } finally {
+        await fd.close();
+    }
+}
 
 /**
  * Descomprime archivo optimizado para GB
@@ -178,17 +211,31 @@ export async function decompressArchive(
     destinationPath: string, 
     options: ServiceOptions = {}
 ): Promise<string[] | void> {
-    const ext = path.extname(archivePath).toLowerCase();
+    // Detectar el tipo real del archivo
+    const fileType = await detectFileType(archivePath);
     
-    if (ext === '.zip') {
+    // Si no se puede detectar, usar la extensión como fallback
+    if (fileType === 'unknown') {
+        const ext = path.extname(archivePath).toLowerCase();
+        if (ext === '.zip') {
+            return decompressZipStreaming(archivePath, destinationPath, options);
+        }
+        if (ext === '.gz' || archivePath.endsWith('.tar.gz')) {
+            return decompressTarGz(archivePath, destinationPath, options);
+        }
+        throw new Error(`Unsupported archive format: ${ext}`);
+    }
+    
+    // Usar el tipo detectado
+    if (fileType === 'zip') {
         return decompressZipStreaming(archivePath, destinationPath, options);
     }
-
-    if (ext === '.gz' || archivePath.endsWith('.tar.gz')) {
+    
+    if (fileType === 'gzip' || fileType === 'tar') {
         return decompressTarGz(archivePath, destinationPath, options);
     }
-
-    throw new Error(`Unsupported archive format: ${ext}`);
+    
+    throw new Error(`Unsupported file type detected: ${fileType}`);
 }
 
 /**
