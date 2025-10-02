@@ -1,11 +1,11 @@
-// src/TaskManager.ts (antes AssetManager.ts)
+// src/core/TaskManager.ts
 
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
 import { pipeline } from 'stream/promises';
-import { Emitter } from '../utils/Emitter.js'; // Asumo que tienes un Emitter similar
-import { Task } from './Task.js'; // Asumo que tienes tu clase Task
+import { Emitter } from '../utils/Emitter.js';
+import { Task } from './Task.js';
 import * as CompressionService from '../services/CompressionService.js';
 import { TaskStatus, TaskType } from '../Types.js';
 import type { 
@@ -20,14 +20,24 @@ import type {
     RestoreOptions,
     RestoreResult,
     ProgressData,
-    DownloadOptions, // NUEVO: Importamos el tipo de opciones
-    OnCompleteCallback // NUEVO: Importamos el tipo de callback
+    DownloadOptions,
+    OnCompleteCallback
 } from '../Types.js';
+
 const processPath = (...args: string[]) => path.join(process.cwd(), ...args);
-// Función para sanitizar nombres de archivo (del código antiguo)
+
 function sanitizeFilename(filename: string): string {
     if (!filename || typeof filename !== 'string') return 'invalid_name';
-    return filename.trim().replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^\.+|\.+$/g, '').replace(/_{2,}/g, '_') || 'backup';
+    return filename.trim()
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/^\.+|\.+$/g, '')
+        .replace(/_{2,}/g, '_') || 'backup';
+}
+
+// NUEVO: Interfaz para el retorno de las operaciones
+interface TaskOperation<T> {
+    taskId: string;
+    promise: Promise<T>;
 }
 
 export class TaskManager extends Emitter {
@@ -43,11 +53,12 @@ export class TaskManager extends Emitter {
         this.options = {
             downloadPath: options.downloadPath,
             unpackPath: options.unpackPath,
-            backupPath: options.backupPath, // Nueva opción
+            backupPath: options.backupPath,
         };
 
-        // Crear directorios necesarios
-        Object.values(this.options).forEach(dir => fs.mkdirSync(dir, { recursive: true }));
+        Object.values(this.options).forEach(dir => 
+            fs.mkdirSync(dir, { recursive: true })
+        );
     }
 
     public on<K extends keyof TaskEvents>(event: K, listener: TaskEvents[K]): () => void {
@@ -84,14 +95,11 @@ export class TaskManager extends Emitter {
         const taskObject = task.toObject();
         this.emit('task:completed', taskObject);
 
-        // NUEVO: Lógica para ejecutar el callback onComplete.
         if (task.onCompleteCallback && typeof task.onCompleteCallback === 'function') {
             try {
-                // Se ejecuta de forma asíncrona para no bloquear el flujo principal.
                 setTimeout(() => task.onCompleteCallback!(result, taskObject), 0);
             } catch (e) {
                 console.error(`Error executing onComplete callback for task ${task.id}:`, e);
-                // Opcional: podrías emitir un evento 'task:callback_error'
             }
         }
     }
@@ -114,9 +122,53 @@ export class TaskManager extends Emitter {
         return Array.from(this.tasks.values()).map(task => task.toObject());
     }
 
-    // --- Lógica de Descarga ---
+    // NUEVO: Método para esperar a que una tarea termine
+    public waitForTask<T = any>(taskId: string): Promise<T> {
+        const task = this.tasks.get(taskId);
+        if (!task) {
+            return Promise.reject(new Error(`Task ${taskId} not found`));
+        }
 
-    public async download(url: string, options: DownloadOptions = {}): Promise<string> {
+        // Si la tarea ya terminó, retornar inmediatamente
+        if (task.status === TaskStatus.COMPLETED) {
+            return Promise.resolve(task.result as T);
+        }
+        if (task.status === TaskStatus.FAILED) {
+            return Promise.reject(new Error(task.error || 'Task failed'));
+        }
+
+        // Esperar a que la tarea termine
+        return new Promise((resolve, reject) => {
+            let unsubCompleted: (() => void) | undefined;
+            let unsubFailed: (() => void) | undefined;
+
+            const cleanup = () => {
+                if (unsubCompleted) unsubCompleted();
+                if (unsubFailed) unsubFailed();
+            };
+
+            const onCompleted = (completedTask: ITask) => {
+                if (completedTask.id === taskId) {
+                    cleanup();
+                    resolve(completedTask.result as T);
+                }
+            };
+
+            const onFailed = (failedTask: ITask) => {
+                if (failedTask.id === taskId) {
+                    cleanup();
+                    reject(new Error(failedTask.error || 'Task failed'));
+                }
+            };
+
+            unsubCompleted = this.on('task:completed', onCompleted);
+            unsubFailed = this.on('task:failed', onFailed);
+        });
+    }
+
+    // --- Lógica de Descarga (MODIFICADA) ---
+
+    public download(url: string, options: DownloadOptions = {}): TaskOperation<DownloadResult> {
         const fileName = options.fileName || path.basename(new URL(url).pathname);
         const filePath = path.join(this.options.downloadPath, fileName);
         const task = this._createTask(
@@ -124,8 +176,15 @@ export class TaskManager extends Emitter {
             { url, filePath, fileName },
             options.onComplete
         );
-        this._executeDownload(task).catch(error => this._failTask(task, error));
-        return task.id;
+
+        const promise = this._executeDownload(task)
+            .then(() => task.result as DownloadResult)
+            .catch(error => {
+                this._failTask(task, error);
+                throw error;
+            });
+
+        return { taskId: task.id, promise };
     }
 
     private async _executeDownload(task: Task): Promise<void> {
@@ -153,9 +212,9 @@ export class TaskManager extends Emitter {
         this._completeTask(task, { filePath, size: finalStats.size } as DownloadResult);
     }
 
-    // --- Lógica de Creación de Backup (Compresión) ---
+    // --- Lógica de Creación de Backup (MODIFICADA) ---
     
-    public async createBackup(sourcePath: string, options: BackupOptions = {}): Promise<string> {
+    public createBackup(sourcePath: string, options: BackupOptions = {}): TaskOperation<BackupResult> {
         const baseFolderName = path.basename(sourcePath);
         const extension = options.useZip ? '.zip' : '.tar.gz';
         const defaultFilename = `${sanitizeFilename(baseFolderName)}-${new Date().toISOString().replace(/:/g, '-')}${extension}`;
@@ -167,8 +226,15 @@ export class TaskManager extends Emitter {
             { sourcePath, backupPath, options },
             options.onComplete
         );
-        this._executeBackup(task).catch(error => this._failTask(task, error));
-        return task.id;
+
+        const promise = this._executeBackup(task)
+            .then(() => task.result as BackupResult)
+            .catch(error => {
+                this._failTask(task, error);
+                throw error;
+            });
+
+        return { taskId: task.id, promise };
     }
 
     private async _executeBackup(task: Task): Promise<void> {
@@ -185,9 +251,9 @@ export class TaskManager extends Emitter {
         this._completeTask(task, { backupPath, size: finalStats.size } as BackupResult);
     }
     
-    // --- Lógica de Restauración de Backup (Descompresión) ---
+    // --- Lógica de Restauración de Backup (MODIFICADA) ---
 
-    public async restoreBackup(archivePath: string, options: RestoreOptions = {}): Promise<string> {
+    public restoreBackup(archivePath: string, options: RestoreOptions = {}): TaskOperation<RestoreResult> {
         const archiveName = path.basename(archivePath);
         const defaultDestFolder = archiveName.replace(/\.(zip|tar\.gz|gz|7z)$/i, '');
         const destinationFolderName = options.destinationFolderName || defaultDestFolder;
@@ -198,8 +264,15 @@ export class TaskManager extends Emitter {
             { archivePath, destinationPath, options },
             options.onComplete
         );
-        this._executeRestore(task).catch(error => this._failTask(task, error));
-        return task.id;
+
+        const promise = this._executeRestore(task)
+            .then(() => task.result as RestoreResult)
+            .catch(error => {
+                this._failTask(task, error);
+                throw error;
+            });
+
+        return { taskId: task.id, promise };
     }
 
     private async _executeRestore(task: Task): Promise<void> {
@@ -217,9 +290,9 @@ export class TaskManager extends Emitter {
         this._completeTask(task, { destinationPath } as RestoreResult);
     }
 
-    // --- Lógica de Descompresión Genérica (Usa la misma lógica que restaurar) ---
+    // --- Lógica de Descompresión Genérica (MODIFICADA) ---
 
-    public async unpack(archivePath: string, options: UnpackOptions = {}): Promise<string> {
+    public unpack(archivePath: string, options: UnpackOptions = {}): TaskOperation<UnpackResult> {
         const archiveName = path.basename(archivePath);
         const defaultUnpackDir = archiveName.replace(/\.(zip|tar\.gz|gz|7z)$/i, '');
         const unpackDirName = options.destination || defaultUnpackDir;
@@ -230,9 +303,17 @@ export class TaskManager extends Emitter {
             { archivePath, unpackPath, options },
             options.onComplete
         );
-        this._executeUnpack(task).catch(error => this._failTask(task, error));
-        return task.id;
+
+        const promise = this._executeUnpack(task)
+            .then(() => task.result as UnpackResult)
+            .catch(error => {
+                this._failTask(task, error);
+                throw error;
+            });
+
+        return { taskId: task.id, promise };
     }
+
     private async _executeUnpack(task: Task): Promise<void> {
         this._startTask(task);
         const { archivePath, unpackPath, options } = task.payload as {

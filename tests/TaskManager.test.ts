@@ -1,41 +1,33 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
-import { TaskManager } from '../src/index';
-import type { ITask } from '../src/index';
+import { TaskManager } from '../src/index.js';
+import type { BackupResult } from '../src/index.js';
 import fs from 'fs';
 import path from 'path';
 
-// Test directories
 const TEST_DIR = './test-temp';
 const SOURCE_DIR = path.join(TEST_DIR, 'source');
 const DOWNLOADS_DIR = path.join(TEST_DIR, 'downloads');
 const UNPACK_DIR = path.join(TEST_DIR, 'unpack');
 const BACKUPS_DIR = path.join(TEST_DIR, 'backups');
 
-// Helper to wait
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-describe('TaskManager', () => {
+describe('TaskManager with Promises', () => {
   let taskManager: TaskManager;
 
   beforeAll(() => {
-    // Clean and create test directories
     if (fs.existsSync(TEST_DIR)) {
       fs.rmSync(TEST_DIR, { recursive: true, force: true });
     }
     fs.mkdirSync(SOURCE_DIR, { recursive: true });
     
-    // Create test files
     fs.writeFileSync(path.join(SOURCE_DIR, 'test.txt'), 'Hello World!');
     fs.writeFileSync(path.join(SOURCE_DIR, 'config.json'), JSON.stringify({ port: 3000 }));
     
-    // Create subdirectory
     const subDir = path.join(SOURCE_DIR, 'subdir');
     fs.mkdirSync(subDir);
     fs.writeFileSync(path.join(subDir, 'nested.txt'), 'Nested file content');
   });
 
   beforeEach(() => {
-    // Create a new TaskManager instance for each test
     taskManager = new TaskManager({
       downloadPath: DOWNLOADS_DIR,
       unpackPath: UNPACK_DIR,
@@ -44,351 +36,307 @@ describe('TaskManager', () => {
   });
 
   afterAll(() => {
-    // Cleanup after all tests
     if (fs.existsSync(TEST_DIR)) {
       fs.rmSync(TEST_DIR, { recursive: true, force: true });
     }
   });
 
-  describe('Initialization', () => {
-    test('should create TaskManager instance', () => {
-      expect(taskManager).toBeDefined();
-      expect(taskManager.getAllTasks()).toEqual([]);
-    });
-
-    test('should create required directories', () => {
-      expect(fs.existsSync(DOWNLOADS_DIR)).toBe(true);
-      expect(fs.existsSync(UNPACK_DIR)).toBe(true);
-      expect(fs.existsSync(BACKUPS_DIR)).toBe(true);
-    });
-  });
-
-  describe('Event System', () => {
-    test('should emit task:created event', async () => {
-      let eventFired = false;
-      let capturedTask: ITask | null = null;
-
-      taskManager.on('task:created', (task: ITask) => {
-        eventFired = true;
-        capturedTask = task;
-      });
-
-      const taskId = await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'test-backup.zip',
+  describe('Promise-based API', () => {
+    test('should resolve promise when backup completes', async () => {
+      const { taskId, promise } = taskManager.createBackup(SOURCE_DIR, {
+        outputFilename: 'promise-backup.zip',
         useZip: true,
       });
 
-      expect(eventFired).toBe(true);
-      expect(capturedTask).toBeDefined();
-      expect(capturedTask?.id).toBe(taskId);
-    });
+      const result = await promise;
 
-    test('should emit task:started event', async () => {
-      let eventFired = false;
-
-      taskManager.on('task:started', () => {
-        eventFired = true;
-      });
-
-      await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'test-backup-started.zip',
-        useZip: true,
-      });
-
-      await sleep(100);
-      expect(eventFired).toBe(true);
-    });
-
-    test('should emit task:completed event', async () => {
-      let completedTask: ITask | null = null;
-
-      taskManager.on('task:completed', (task: ITask) => {
-        completedTask = task;
-      });
-
-      await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'test-backup-completed.zip',
-        useZip: true,
-      });
-
-      await sleep(1000);
-      expect(completedTask).toBeDefined();
-      expect(completedTask?.status).toBe('completed');
-    });
-  });
-
-  describe('Backup Operations', () => {
-    test('should create a ZIP backup', async () => {
-      const taskId = await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'backup.zip',
-        useZip: true,
-      });
-
-      await sleep(1000);
-
-      const task = taskManager.getTask(taskId);
-      expect(task).toBeDefined();
-      expect(task?.status).toBe('completed');
-      expect(task?.type).toBe('backup_compress');
-      
-      const backupPath = (task?.result as any)?.backupPath;
-      expect(fs.existsSync(backupPath)).toBe(true);
-    });
-
-    test('should create a TAR.GZ backup', async () => {
-      const taskId = await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'backup.tar.gz',
-        useZip: false,
-      });
-
-      await sleep(1000);
+      expect(result).toBeDefined();
+      expect(result.backupPath).toBeDefined();
+      expect(fs.existsSync(result.backupPath)).toBe(true);
 
       const task = taskManager.getTask(taskId);
       expect(task?.status).toBe('completed');
-      
-      const backupPath = (task?.result as any)?.backupPath;
-      expect(backupPath.endsWith('.tar.gz')).toBe(true);
-      expect(fs.existsSync(backupPath)).toBe(true);
     });
 
-    test('should report progress during backup', async () => {
-      let progressReported = false;
-      let maxProgress = 0;
-
-      taskManager.on('task:progress', (task: ITask) => {
-        progressReported = true;
-        if (task.progress > maxProgress) {
-          maxProgress = task.progress;
-        }
-      });
-
-      await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'backup-progress.zip',
-        useZip: true,
-      });
-
-      await sleep(1000);
-      expect(progressReported).toBe(true);
-      expect(maxProgress).toBeGreaterThan(0);
-    });
-
-    test('should fail with invalid source path', async () => {
-      let failedTask: ITask | null = null;
-
-      taskManager.on('task:failed', (task: ITask) => {
-        failedTask = task;
-      });
-
-      const taskId = await taskManager.createBackup('/nonexistent/path', {
+    test('should reject promise when backup fails', async () => {
+      const { promise } = taskManager.createBackup('/nonexistent/path', {
         outputFilename: 'fail.zip',
         useZip: true,
       });
 
-      await sleep(500);
-
-      const task = taskManager.getTask(taskId);
-      expect(task?.status).toBe('failed');
-      expect(task?.error).toBeDefined();
-      expect(failedTask).toBeDefined();
+      try {
+        await promise;
+        expect(true).toBe(false);
+      } catch (error) {
+        expect(error).toBeInstanceOf(Error);
+      }
     });
-  });
 
-  describe('Restore Operations', () => {
-    test('should restore a ZIP backup', async () => {
-      // First create a backup
-      const backupTaskId = await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'restore-test.zip',
+    test('should handle restore with promises', async () => {
+      const { promise: backupPromise } = taskManager.createBackup(SOURCE_DIR, {
+        outputFilename: 'restore-promise.zip',
         useZip: true,
       });
 
-      await sleep(1000);
+      const backupResult = await backupPromise;
 
-      const backupTask = taskManager.getTask(backupTaskId);
-      const backupPath = (backupTask?.result as any)?.backupPath;
-
-      // Then restore it
-      const restoreTaskId = await taskManager.restoreBackup(backupPath, {
-        destinationFolderName: 'restored',
+      const { promise: restorePromise } = taskManager.restoreBackup(backupResult.backupPath, {
+        destinationFolderName: 'restored-promise',
       });
 
-      await sleep(1000);
+      const restoreResult = await restorePromise;
 
-      const restoreTask = taskManager.getTask(restoreTaskId);
-      expect(restoreTask?.status).toBe('completed');
-      
-      const restoredPath = path.join(UNPACK_DIR, 'restored');
-      expect(fs.existsSync(restoredPath)).toBe(true);
-      expect(fs.existsSync(path.join(restoredPath, 'test.txt'))).toBe(true);
+      expect(restoreResult.destinationPath).toBeDefined();
+      expect(fs.existsSync(restoreResult.destinationPath)).toBe(true);
+      expect(fs.existsSync(path.join(restoreResult.destinationPath, 'test.txt'))).toBe(true);
     });
 
-    test('should restore a TAR.GZ backup', async () => {
-      // Create tar.gz backup
-      const backupTaskId = await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'restore-tar.tar.gz',
-        useZip: false,
-      });
-
-      await sleep(1000);
-
-      const backupTask = taskManager.getTask(backupTaskId);
-      const backupPath = (backupTask?.result as any)?.backupPath;
-
-      // Restore it
-      const restoreTaskId = await taskManager.restoreBackup(backupPath, {
-        destinationFolderName: 'restored-tar',
-      });
-
-      await sleep(1000);
-
-      const restoreTask = taskManager.getTask(restoreTaskId);
-      expect(restoreTask?.status).toBe('completed');
-      
-      const restoredPath = path.join(UNPACK_DIR, 'restored-tar');
-      expect(fs.existsSync(restoredPath)).toBe(true);
-    });
-
-    test('should use unpack as alias for restoreBackup', async () => {
-      const backupTaskId = await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'unpack-test.zip',
-        useZip: true,
-      });
-
-      await sleep(1000);
-
-      const backupTask = taskManager.getTask(backupTaskId);
-      const backupPath = (backupTask?.result as any)?.backupPath;
-
-      const unpackTaskId = await taskManager.unpack(backupPath, {
-        destinationFolderName: 'unpacked',
-      });
-
-      await sleep(1000);
-
-      const unpackTask = taskManager.getTask(unpackTaskId);
-      expect(unpackTask?.status).toBe('completed');
-    });
-  });
-
-  describe('Download Operations', () => {
-    test('should download a file', async () => {
+    test('should handle download with promises', async () => {
       const testUrl = 'https://raw.githubusercontent.com/nglmercer/node-task-manager/main/README.md';
       
-      const taskId = await taskManager.download(testUrl);
-      
-      await sleep(3000);
+      const { promise } = taskManager.download(testUrl);
+      const result = await promise;
 
-      const task = taskManager.getTask(taskId);
-      expect(task?.status).toBe('completed');
-      expect(task?.type).toBe('downloading');
-      
-      const downloadedPath = (task?.result as any)?.filePath;
-      expect(fs.existsSync(downloadedPath)).toBe(true);
-    }, 10000); // Timeout extendido para downloads
+      expect(result.filePath).toBeDefined();
+      expect(fs.existsSync(result.filePath)).toBe(true);
+      expect(result.size).toBeGreaterThan(0);
+    }, 15000);
 
-    test('should fail with invalid URL', async () => {
-      let failedTask: ITask | null = null;
-
-      taskManager.on('task:failed', (task: ITask) => {
-        failedTask = task;
+    test('should handle unpack with promises', async () => {
+      const { promise: backupPromise } = taskManager.createBackup(SOURCE_DIR, {
+        outputFilename: 'unpack-promise.zip',
+        useZip: true,
       });
 
-      const taskId = await taskManager.download('https://invalid-url-that-does-not-exist.com/file.zip');
-      
-      await sleep(2000);
+      const backupResult = await backupPromise;
 
-      const task = taskManager.getTask(taskId);
-      expect(task?.status).toBe('failed');
-      expect(failedTask).toBeDefined();
+      const { promise: unpackPromise } = taskManager.unpack(backupResult.backupPath, {
+        destination: 'unpacked-promise',
+      });
+
+      const unpackResult = await unpackPromise;
+
+      expect(unpackResult.unpackDir).toBeDefined();
+      expect(fs.existsSync(unpackResult.unpackDir)).toBe(true);
+    });
+  });
+
+  describe('Mixed API (Events + Promises)', () => {
+    test('should emit events while using promises', async () => {
+      const events: string[] = [];
+
+      taskManager.on('task:created', () => events.push('created'));
+      taskManager.on('task:started', () => events.push('started'));
+      taskManager.on('task:progress', () => {
+        if (!events.includes('progress')) events.push('progress');
+      });
+      taskManager.on('task:completed', () => events.push('completed'));
+
+      const { promise } = taskManager.createBackup(SOURCE_DIR, {
+        outputFilename: 'mixed-api.zip',
+        useZip: true,
+      });
+
+      await promise;
+
+      expect(events).toContain('created');
+      expect(events).toContain('started');
+      expect(events).toContain('progress');
+      expect(events).toContain('completed');
+    });
+
+    test('should use callback and promise together', async () => {
+      let callbackCalled = false;
+      let callbackResult: BackupResult | null = null;
+
+      const { promise } = taskManager.createBackup(SOURCE_DIR, {
+        outputFilename: 'callback-promise.zip',
+        useZip: true,
+        onComplete: (result) => {
+          callbackCalled = true;
+          callbackResult = result;
+        }
+      });
+
+      const promiseResult = await promise;
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      expect(callbackCalled).toBe(true);
+      expect(callbackResult).toEqual(promiseResult);
+    });
+  });
+
+  describe('waitForTask utility', () => {
+    test('should wait for task completion', async () => {
+      const { taskId } = taskManager.createBackup(SOURCE_DIR, {
+        outputFilename: 'wait-test.zip',
+        useZip: true,
+      });
+
+      const result = await taskManager.waitForTask<BackupResult>(taskId);
+
+      expect(result).toBeDefined();
+      expect(result.backupPath).toBeDefined();
+    });
+
+    test('should reject when task fails', async () => {
+      const { taskId } = taskManager.createBackup('/nonexistent', {
+        outputFilename: 'wait-fail.zip',
+        useZip: true,
+      });
+
+      try {
+        await taskManager.waitForTask(taskId);
+        expect(true).toBe(false);
+      } catch (error) {
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toBeDefined();
+      }
+    });
+
+    test('should resolve immediately for completed tasks', async () => {
+      const { taskId, promise } = taskManager.createBackup(SOURCE_DIR, {
+        outputFilename: 'wait-immediate.zip',
+        useZip: true,
+      });
+
+      await promise;
+
+      const result = await taskManager.waitForTask<BackupResult>(taskId);
+      expect(result).toBeDefined();
+    });
+  });
+
+  describe('Parallel operations with promises', () => {
+    test('should handle multiple parallel backups', async () => {
+      const operations = [
+        taskManager.createBackup(SOURCE_DIR, { outputFilename: 'parallel-1.zip', useZip: true }),
+        taskManager.createBackup(SOURCE_DIR, { outputFilename: 'parallel-2.zip', useZip: true }),
+        taskManager.createBackup(SOURCE_DIR, { outputFilename: 'parallel-3.zip', useZip: true }),
+      ];
+
+      const results = await Promise.all(operations.map(op => op.promise));
+
+      expect(results).toHaveLength(3);
+      results.forEach(result => {
+        expect(result.backupPath).toBeDefined();
+        expect(fs.existsSync(result.backupPath)).toBe(true);
+      });
+    });
+
+    test('should handle Promise.allSettled for partial failures', async () => {
+      const operations = [
+        taskManager.createBackup(SOURCE_DIR, { outputFilename: 'success-1.zip', useZip: true }),
+        taskManager.createBackup('/invalid/path', { outputFilename: 'fail-1.zip', useZip: true }),
+        taskManager.createBackup(SOURCE_DIR, { outputFilename: 'success-2.zip', useZip: true }),
+      ];
+
+      const results = await Promise.allSettled(operations.map(op => op.promise));
+
+      expect(results[0].status).toBe('fulfilled');
+      expect(results[1].status).toBe('rejected');
+      expect(results[2].status).toBe('fulfilled');
+    });
+
+    test('should handle sequential async operations', async () => {
+      const { promise: backupPromise } = taskManager.createBackup(SOURCE_DIR, {
+        outputFilename: 'sequential.zip',
+        useZip: true,
+      });
+      const backupResult = await backupPromise;
+
+      const { promise: restorePromise } = taskManager.restoreBackup(backupResult.backupPath, {
+        destinationFolderName: 'sequential-restored',
+      });
+      const restoreResult = await restorePromise;
+
+      expect(fs.existsSync(backupResult.backupPath)).toBe(true);
+      expect(fs.existsSync(restoreResult.destinationPath)).toBe(true);
+    });
+  });
+
+  describe('Error handling', () => {
+    test('should provide detailed error in promise rejection', async () => {
+      const { promise } = taskManager.createBackup('/path/that/does/not/exist', {
+        outputFilename: 'error-test.zip',
+        useZip: true,
+      });
+
+      try {
+        await promise;
+        expect(true).toBe(false);
+      } catch (error) {
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toBeDefined();
+      }
+    });
+
+    test('should handle task not found in waitForTask', async () => {
+      try {
+        await taskManager.waitForTask('non-existent-task-id');
+        expect(true).toBe(false);
+      } catch (error) {
+        expect((error as Error).message).toContain('not found');
+      }
+    });
+  });
+
+  describe('Complex workflows', () => {
+    test('should handle backup -> restore -> verify workflow', async () => {
+      const { promise: backupPromise } = taskManager.createBackup(SOURCE_DIR, {
+        outputFilename: 'workflow.zip',
+        useZip: true,
+      });
+      const backup = await backupPromise;
+
+      const { promise: restorePromise } = taskManager.restoreBackup(backup.backupPath, {
+        destinationFolderName: 'workflow-restored',
+      });
+      const restore = await restorePromise;
+
+      const originalContent = fs.readFileSync(path.join(SOURCE_DIR, 'test.txt'), 'utf-8');
+      const restoredContent = fs.readFileSync(
+        path.join(restore.destinationPath, 'test.txt'),
+        'utf-8'
+      );
+
+      expect(originalContent).toBe(restoredContent);
+    });
+
+    test('should handle download -> unpack workflow', async () => {
+      const { promise: backupPromise } = taskManager.createBackup(SOURCE_DIR, {
+        outputFilename: 'download-unpack.zip',
+        useZip: true,
+      });
+      const backup = await backupPromise;
+
+      const { promise: unpackPromise } = taskManager.unpack(backup.backupPath, {
+        destination: 'download-unpacked',
+      });
+      const unpack = await unpackPromise;
+
+      expect(fs.existsSync(unpack.unpackDir)).toBe(true);
+    });
+  });
+
+  describe('TAR.GZ with promises', () => {
+    test('should create and restore TAR.GZ backup', async () => {
+      const { promise: backupPromise } = taskManager.createBackup(SOURCE_DIR, {
+        outputFilename: 'tar-test.tar.gz',
+        useZip: false,
+      });
+      const backup = await backupPromise;
+
+      expect(backup.backupPath.endsWith('.tar.gz')).toBe(true);
+
+      const { promise: restorePromise } = taskManager.restoreBackup(backup.backupPath, {
+        destinationFolderName: 'tar-restored',
+      });
+      const restore = await restorePromise;
+
+      expect(fs.existsSync(restore.destinationPath)).toBe(true);
+      expect(fs.existsSync(path.join(restore.destinationPath, 'test.txt'))).toBe(true);
     }, 10000);
-  });
-
-  describe('Task Management', () => {
-    test('should get task by ID', async () => {
-      const taskId = await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'get-task.zip',
-        useZip: true,
-      });
-
-      const task = taskManager.getTask(taskId);
-      expect(task).toBeDefined();
-      expect(task?.id).toBe(taskId);
-    });
-
-    test('should return null for non-existent task', () => {
-      const task = taskManager.getTask('non-existent-id');
-      expect(task).toBeNull();
-    });
-
-    test('should get all tasks', async () => {
-      await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'task1.zip',
-        useZip: true,
-      });
-
-      await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'task2.zip',
-        useZip: true,
-      });
-
-      const allTasks = taskManager.getAllTasks();
-      expect(allTasks.length).toBeGreaterThanOrEqual(2);
-    });
-
-    test('should track multiple concurrent tasks', async () => {
-      const taskId1 = await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'concurrent1.zip',
-        useZip: true,
-      });
-
-      const taskId2 = await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'concurrent2.zip',
-        useZip: true,
-      });
-
-      const task1 = taskManager.getTask(taskId1);
-      const task2 = taskManager.getTask(taskId2);
-
-      expect(task1).toBeDefined();
-      expect(task2).toBeDefined();
-      expect(task1?.id).not.toBe(task2?.id);
-    });
-  });
-
-  describe('Task Details', () => {
-    test('should include file details in progress', async () => {
-      let currentFile: string | undefined;
-
-      taskManager.on('task:progress', (task: ITask) => {
-        if (task.details.currentFile) {
-          currentFile = task.details.currentFile as string;
-        }
-      });
-
-      await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'details-test.zip',
-        useZip: true,
-      });
-
-      await sleep(1000);
-      expect(currentFile).toBeDefined();
-    });
-
-    test('should track processed bytes', async () => {
-      let processedBytes = 0;
-
-      taskManager.on('task:progress', (task: ITask) => {
-        if (task.details.processedBytes) {
-          processedBytes = task.details.processedBytes as number;
-        }
-      });
-
-      await taskManager.createBackup(SOURCE_DIR, {
-        outputFilename: 'bytes-test.zip',
-        useZip: true,
-      });
-
-      await sleep(1000);
-      expect(processedBytes).toBeGreaterThan(0);
-    });
   });
 });

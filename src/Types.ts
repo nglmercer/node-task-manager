@@ -1,22 +1,18 @@
-// src/Types.ts
-
-// --- ENUMS ---
 export enum TaskStatus {
     PENDING = 'pending',
     IN_PROGRESS = 'in_progress',
     COMPLETED = 'completed',
     FAILED = 'failed',
     CANCELLED = 'cancelled'
-};
+}
 
 export enum TaskType {
     DOWNLOADING = "downloading",
-    UNPACKING = "unpacking", // MODIFICADO: Añadido para diferenciar de restore
+    UNPACKING = "unpacking",
     BACKUP_COMPRESS = "backup_compress",
     BACKUP_RESTORE = "backup_restore",
-};
+}
 
-// --- INTERFACES DE RESULTADOS ---
 export interface DownloadResult {
     filePath: string;
     size: number;
@@ -24,7 +20,7 @@ export interface DownloadResult {
 
 export interface UnpackResult {
     unpackDir: string;
-    [key: string]: any;
+    files?: string[];
 }
 
 export interface BackupResult {
@@ -36,16 +32,15 @@ export interface RestoreResult {
     destinationPath: string;
 }
 
-// --- INTERFAZ DE PROGRESO ---
 export interface ProgressData {
     percentage: number;
     processedBytes: number;
     totalBytes: number;
     currentFile?: string;
 }
+
 export type ResultsTypes = DownloadResult | UnpackResult | BackupResult | RestoreResult | null;
 
-// --- INTERFAZ DE TAREA ---
 export interface ITask {
     id: string;
     type: TaskType;
@@ -59,9 +54,6 @@ export interface ITask {
     updatedAt: Date;
 }
 
-// --- OPCIONES PARA LOS MÉTODOS (MODIFICADAS) ---
-
-// NUEVO: Tipo genérico para el callback para evitar repetición
 export type OnCompleteCallback<T> = (result: T, task: ITask) => void;
 
 export interface AssetManagerOptions {
@@ -70,7 +62,6 @@ export interface AssetManagerOptions {
     backupPath: string;
 }
 
-// NUEVO: Interfaz de opciones específica para el método download
 export interface DownloadOptions {
     fileName?: string;
     onComplete?: OnCompleteCallback<DownloadResult>;
@@ -95,7 +86,6 @@ export interface RestoreOptions {
     onComplete?: OnCompleteCallback<RestoreResult>;
 }
 
-// --- EVENTOS ---
 export type TaskEvents = {
     'task:created': (task: ITask) => void;
     'task:started': (task: ITask) => void;

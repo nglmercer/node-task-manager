@@ -31,3 +31,4 @@ lerna-debug.log*
 #temp | dist optional
 temp/
 tmp/
+bun.lock
