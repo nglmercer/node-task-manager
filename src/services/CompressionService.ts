@@ -8,9 +8,9 @@ import { pipeline } from 'stream/promises';
 import type { ProgressData } from '../Types.js';
 
 // Configuración para archivos grandes
-const CHUNK_SIZE = 64 * 1024; // 64KB chunks para lectura
-const HIGH_WATER_MARK = 256 * 1024; // 256KB buffer máximo
-const MAX_CONCURRENT_FILES = 5; // Límite de archivos simultáneos
+const CHUNK_SIZE = 64 * 1024;
+const HIGH_WATER_MARK = 256 * 1024;
+const MAX_CONCURRENT_FILES = 5;
 
 interface ServiceOptions {
     progressCallback?: (data: ProgressData) => void;
@@ -18,16 +18,12 @@ interface ServiceOptions {
     useZip?: boolean;
 }
 
-/**
- * Obtiene tamaño estimado sin cargar todo en memoria
- */
 async function estimateDirectorySize(directoryPath: string, maxDepth: number = 3): Promise<number> {
     let totalSize = 0;
     const queue: Array<{ path: string; depth: number }> = [{ path: directoryPath, depth: 0 }];
     let hasError = false;
     let firstError: Error | null = null;
     
-    // Verificar que el directorio raíz existe
     try {
         await fs.promises.access(directoryPath);
         const stat = await fs.promises.stat(directoryPath);
@@ -55,7 +51,6 @@ async function estimateDirectorySize(directoryPath: string, maxDepth: number = 3
                 }
             }
         } catch (err) {
-            // Solo loguear errores en subdirectorios, no el raíz
             if (currentPath !== directoryPath) {
                 console.warn(`Error reading ${currentPath}:`, err);
             } else {
@@ -65,7 +60,6 @@ async function estimateDirectorySize(directoryPath: string, maxDepth: number = 3
         }
     }
     
-    // Si hubo error en el directorio raíz, lanzar excepción
     if (hasError && firstError) {
         throw firstError;
     }
@@ -73,15 +67,11 @@ async function estimateDirectorySize(directoryPath: string, maxDepth: number = 3
     return totalSize;
 }
 
-/**
- * Comprime directorio de forma optimizada para archivos GB
- */
 export async function compressDirectory(
     sourcePath: string, 
     outputPath: string, 
     options: ServiceOptions = {}
 ): Promise<void> {
-    // Estimación rápida del tamaño (no exacta pero suficiente)
     const estimatedSize = await estimateDirectorySize(sourcePath);
     let processedBytes = 0;
     let currentFileName: string | undefined;
@@ -94,8 +84,8 @@ export async function compressDirectory(
     const archive = archiver(format, {
         gzip: !options.useZip,
         gzipOptions: {
-            level: options.compressionLevel || 6, // Nivel 6 es buen balance
-            memLevel: 8, // Reduce uso de memoria
+            level: options.compressionLevel || 6,
+            memLevel: 8,
             chunkSize: CHUNK_SIZE
         },
         zlib: { 
@@ -103,14 +93,13 @@ export async function compressDirectory(
             memLevel: 8,
             chunkSize: CHUNK_SIZE
         },
-        // Configuración crítica para archivos grandes
         statConcurrency: MAX_CONCURRENT_FILES,
         highWaterMark: HIGH_WATER_MARK
     });
 
     return new Promise((resolve, reject) => {
         let lastProgressUpdate = Date.now();
-        const progressThrottle = 100; // Actualizar cada 100ms máximo
+        const progressThrottle = 100;
 
         archive.on('entry', (entryData: any) => {
             currentFileName = entryData.name || entryData.sourcePath;
@@ -119,7 +108,6 @@ export async function compressDirectory(
                 processedBytes += entryData.stats.size;
             }
 
-            // Throttle de actualizaciones de progreso
             const now = Date.now();
             if (options.progressCallback && now - lastProgressUpdate > progressThrottle) {
                 lastProgressUpdate = now;
@@ -161,17 +149,12 @@ export async function compressDirectory(
             reject(err);
         });
 
-        // Manejo de backpressure
         archive.pipe(output);
-        
-        // Usar glob con límites para no cargar todo en memoria
         archive.directory(sourcePath, false);
         archive.finalize();
     });
 }
-/**
- * Detecta el tipo real de archivo leyendo sus magic bytes
- */
+
 async function detectFileType(filePath: string): Promise<'zip' | 'gzip' | 'tar' | 'unknown'> {
     const fd = await fs.promises.open(filePath, 'r');
     const buffer = Buffer.alloc(10);
@@ -179,17 +162,14 @@ async function detectFileType(filePath: string): Promise<'zip' | 'gzip' | 'tar' 
     try {
         await fd.read(buffer, 0, 10, 0);
         
-        // ZIP: 50 4B (PK)
         if (buffer[0] === 0x50 && buffer[1] === 0x4B) {
             return 'zip';
         }
         
-        // GZIP: 1F 8B
         if (buffer[0] === 0x1F && buffer[1] === 0x8B) {
             return 'gzip';
         }
         
-        // TAR: "ustar" en offset 257
         const tarBuffer = Buffer.alloc(262);
         await fd.read(tarBuffer, 0, 262, 0);
         const ustarSignature = tarBuffer.slice(257, 262).toString('ascii');
@@ -203,18 +183,13 @@ async function detectFileType(filePath: string): Promise<'zip' | 'gzip' | 'tar' 
     }
 }
 
-/**
- * Descomprime archivo optimizado para GB
- */
 export async function decompressArchive(
     archivePath: string, 
     destinationPath: string, 
     options: ServiceOptions = {}
 ): Promise<string[] | void> {
-    // Detectar el tipo real del archivo
     const fileType = await detectFileType(archivePath);
     
-    // Si no se puede detectar, usar la extensión como fallback
     if (fileType === 'unknown') {
         const ext = path.extname(archivePath).toLowerCase();
         if (ext === '.zip') {
@@ -226,7 +201,6 @@ export async function decompressArchive(
         throw new Error(`Unsupported archive format: ${ext}`);
     }
     
-    // Usar el tipo detectado
     if (fileType === 'zip') {
         return decompressZipStreaming(archivePath, destinationPath, options);
     }
@@ -238,15 +212,11 @@ export async function decompressArchive(
     throw new Error(`Unsupported file type detected: ${fileType}`);
 }
 
-/**
- * Descompresión ZIP con streaming real (sin cargar todo en memoria)
- */
 async function decompressZipStreaming(
     archivePath: string,
     destinationPath: string,
     options: ServiceOptions = {}
 ): Promise<string[]> {
-    // Usar yauzl para streaming real en lugar de decompress
     const yauzl = await import('yauzl-promise');
     const zipFile = await yauzl.open(archivePath);
     const extractedFiles: string[] = [];
@@ -272,9 +242,20 @@ async function decompressZipStreaming(
                 });
 
                 await pipeline(readStream, writeStream);
+                
+                // 🔧 FIX: Restaurar permisos de ejecución para archivos ejecutables
+                // Los archivos ZIP almacenan permisos Unix en los atributos externos
+                const externalAttrs = (entry as any).externalFileAttributes;
+                if (externalAttrs) {
+                    const unixMode = (externalAttrs >>> 16) & 0xFFFF;
+                    if (unixMode) {
+                        // Preservar permisos originales
+                        await fs.promises.chmod(entryPath, unixMode);
+                    }
+                }
+                
                 processedBytes += entry.uncompressedSize;
 
-                // Throttle de progreso
                 const now = Date.now();
                 if (options.progressCallback && now - lastProgressUpdate > 100) {
                     lastProgressUpdate = now;
@@ -303,9 +284,6 @@ async function decompressZipStreaming(
     }
 }
 
-/**
- * Descompresión TAR.GZ optimizada
- */
 async function decompressTarGz(
     archivePath: string, 
     destinationPath: string, 
@@ -375,11 +353,16 @@ async function decompressTarGz(
                         });
 
                         await pipeline(stream, writeStream);
+                        
+                        // 🔧 FIX: Restaurar permisos originales del archivo
+                        // Los archivos TAR almacenan permisos Unix directamente
+                        if (header.mode) {
+                            await fs.promises.chmod(entryPath, header.mode);
+                        }
                     }
 
                     processedBytes += header.size || 0;
 
-                    // Throttle de progreso
                     const now = Date.now();
                     if (options.progressCallback && now - lastProgressUpdate > 100) {
                         lastProgressUpdate = now;
