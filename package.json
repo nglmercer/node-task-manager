@@ -1,6 +1,6 @@
 {
   "name": "node-task-manager",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Un gestor de tareas asíncrono y basado en eventos para Node.js que maneja descargas, backups y restauraciones.",
   "author": "nglmercer@gmail.com",
   "license": "MIT",
@@ -39,16 +39,17 @@
   "dependencies": {
     "archiver": "^7.0.1",
     "axios": "^1.10.0",
-    "decompress": "^4.2.1",
     "tar-stream": "^3.1.7",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "yauzl-promise": "^4.0.0"
   },
   "devDependencies": {
     "@types/archiver": "^6.0.3",
     "@types/bun": "^1.2.23",
-    "@types/decompress": "^4.2.7",
     "@types/node": "^20.11.17",
     "@types/tar-stream": "^3.1.4",
+    "@types/yauzl": "^2.10.3",
+    "@types/yauzl-promise": "^4.0.1",
     "tsx": "^4.7.1",
     "typescript": "^5.8.3"
   }

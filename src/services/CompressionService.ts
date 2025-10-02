@@ -4,24 +4,14 @@ import path from 'path';
 import zlib from 'zlib';
 import archiver from 'archiver';
 import tar from 'tar-stream';
+import { pipeline } from 'stream/promises';
 import type { ProgressData } from '../Types.js';
 
-// Función para obtener el tamaño total de un directorio
-async function getDirectorySize(directoryPath: string): Promise<number> {
-    const entries = await fs.promises.readdir(directoryPath, { withFileTypes: true });
-    const sizes = await Promise.all(
-        entries.map(entry => {
-            const fullPath = path.join(directoryPath, entry.name);
-            if (entry.isDirectory()) {
-                return getDirectorySize(fullPath);
-            }
-            return fs.promises.stat(fullPath).then(stat => stat.size);
-        })
-    );
-    return sizes.reduce((acc, size) => acc + size, 0);
-}
+// Configuración para archivos grandes
+const CHUNK_SIZE = 64 * 1024; // 64KB chunks para lectura
+const HIGH_WATER_MARK = 256 * 1024; // 256KB buffer máximo
+const MAX_CONCURRENT_FILES = 5; // Límite de archivos simultáneos
 
-// Opciones para las funciones de compresión/descompresión
 interface ServiceOptions {
     progressCallback?: (data: ProgressData) => void;
     compressionLevel?: number;
@@ -29,30 +19,115 @@ interface ServiceOptions {
 }
 
 /**
- * Comprime un directorio en un archivo .zip o .tar.gz con reporte de progreso.
+ * Obtiene tamaño estimado sin cargar todo en memoria
  */
-export async function compressDirectory(sourcePath: string, outputPath: string, options: ServiceOptions = {}): Promise<void> {
-    const totalSize = await getDirectorySize(sourcePath);
-    const output = fs.createWriteStream(outputPath);
+async function estimateDirectorySize(directoryPath: string, maxDepth: number = 3): Promise<number> {
+    let totalSize = 0;
+    const queue: Array<{ path: string; depth: number }> = [{ path: directoryPath, depth: 0 }];
+    let hasError = false;
+    let firstError: Error | null = null;
+    
+    // Verificar que el directorio raíz existe
+    try {
+        await fs.promises.access(directoryPath);
+        const stat = await fs.promises.stat(directoryPath);
+        if (!stat.isDirectory()) {
+            throw new Error(`Path is not a directory: ${directoryPath}`);
+        }
+    } catch (err) {
+        throw new Error(`Cannot access source directory: ${directoryPath}`);
+    }
+    
+    while (queue.length > 0) {
+        const { path: currentPath, depth } = queue.shift()!;
+        
+        try {
+            const entries = await fs.promises.readdir(currentPath, { withFileTypes: true });
+            
+            for (const entry of entries) {
+                const fullPath = path.join(currentPath, entry.name);
+                
+                if (entry.isDirectory() && depth < maxDepth) {
+                    queue.push({ path: fullPath, depth: depth + 1 });
+                } else if (entry.isFile()) {
+                    const stat = await fs.promises.stat(fullPath);
+                    totalSize += stat.size;
+                }
+            }
+        } catch (err) {
+            // Solo loguear errores en subdirectorios, no el raíz
+            if (currentPath !== directoryPath) {
+                console.warn(`Error reading ${currentPath}:`, err);
+            } else {
+                hasError = true;
+                firstError = err as Error;
+            }
+        }
+    }
+    
+    // Si hubo error en el directorio raíz, lanzar excepción
+    if (hasError && firstError) {
+        throw firstError;
+    }
+    
+    return totalSize;
+}
+
+/**
+ * Comprime directorio de forma optimizada para archivos GB
+ */
+export async function compressDirectory(
+    sourcePath: string, 
+    outputPath: string, 
+    options: ServiceOptions = {}
+): Promise<void> {
+    // Estimación rápida del tamaño (no exacta pero suficiente)
+    const estimatedSize = await estimateDirectorySize(sourcePath);
+    let processedBytes = 0;
+    let currentFileName: string | undefined;
+
+    const output = fs.createWriteStream(outputPath, {
+        highWaterMark: HIGH_WATER_MARK
+    });
+
     const format = options.useZip ? 'zip' : 'tar';
     const archive = archiver(format, {
         gzip: !options.useZip,
-        zlib: { level: options.compressionLevel || 9 }
+        gzipOptions: {
+            level: options.compressionLevel || 6, // Nivel 6 es buen balance
+            memLevel: 8, // Reduce uso de memoria
+            chunkSize: CHUNK_SIZE
+        },
+        zlib: { 
+            level: options.compressionLevel || 6,
+            memLevel: 8,
+            chunkSize: CHUNK_SIZE
+        },
+        // Configuración crítica para archivos grandes
+        statConcurrency: MAX_CONCURRENT_FILES,
+        highWaterMark: HIGH_WATER_MARK
     });
 
-    let currentFileName: string | undefined;
-
     return new Promise((resolve, reject) => {
+        let lastProgressUpdate = Date.now();
+        const progressThrottle = 100; // Actualizar cada 100ms máximo
+
         archive.on('entry', (entryData: any) => {
             currentFileName = entryData.name || entryData.sourcePath;
-        });
+            
+            if (entryData.stats?.size) {
+                processedBytes += entryData.stats.size;
+            }
 
-        archive.on('progress', (progress) => {
-            if (options.progressCallback) {
+            // Throttle de actualizaciones de progreso
+            const now = Date.now();
+            if (options.progressCallback && now - lastProgressUpdate > progressThrottle) {
+                lastProgressUpdate = now;
                 options.progressCallback({
-                    percentage: totalSize > 0 ? (progress.fs.processedBytes / totalSize) * 100 : 0,
-                    processedBytes: progress.fs.processedBytes,
-                    totalBytes: totalSize,
+                    percentage: estimatedSize > 0 ? 
+                        Math.min(99, (processedBytes / estimatedSize) * 100) : 0,
+                    processedBytes,
+                    totalBytes: estimatedSize,
                     currentFile: currentFileName
                 });
             }
@@ -63,49 +138,52 @@ export async function compressDirectory(sourcePath: string, outputPath: string, 
                 console.warn('Archiver warning:', err);
             }
         });
-        archive.on('error', reject);
-        output.on('close', resolve);
-        output.on('error', reject);
-        
+
+        archive.on('error', (err) => {
+            output.destroy();
+            reject(err);
+        });
+
+        output.on('close', () => {
+            if (options.progressCallback) {
+                options.progressCallback({
+                    percentage: 100,
+                    processedBytes: estimatedSize,
+                    totalBytes: estimatedSize,
+                    currentFile: 'Completado'
+                });
+            }
+            resolve();
+        });
+
+        output.on('error', (err) => {
+            archive.destroy();
+            reject(err);
+        });
+
+        // Manejo de backpressure
         archive.pipe(output);
+        
+        // Usar glob con límites para no cargar todo en memoria
         archive.directory(sourcePath, false);
         archive.finalize();
     });
 }
 
 /**
- * Descomprime un archivo .zip o .tar.gz con reporte de progreso.
+ * Descomprime archivo optimizado para GB
  */
-export async function decompressArchive(archivePath: string, destinationPath: string, options: ServiceOptions = {}): Promise<string[] | void> {
+export async function decompressArchive(
+    archivePath: string, 
+    destinationPath: string, 
+    options: ServiceOptions = {}
+): Promise<string[] | void> {
     const ext = path.extname(archivePath).toLowerCase();
     
-    // Para .zip, usamos 'decompress'
     if (ext === '.zip') {
-        const decompress = (await import('decompress')).default;
-        if (options.progressCallback) {
-            options.progressCallback({ 
-                percentage: 10, 
-                processedBytes: 0, 
-                totalBytes: 0, 
-                currentFile: 'Iniciando descompresión...' 
-            });
-        }
-        
-        const files = await decompress(archivePath, destinationPath);
-        
-        if (options.progressCallback) {
-            options.progressCallback({ 
-                percentage: 100, 
-                processedBytes: 0, 
-                totalBytes: 0, 
-                currentFile: 'Finalizado.' 
-            });
-        }
-        
-        return files.map(f => f.path);
+        return decompressZipStreaming(archivePath, destinationPath, options);
     }
 
-    // Para .tar.gz o .gz
     if (ext === '.gz' || archivePath.endsWith('.tar.gz')) {
         return decompressTarGz(archivePath, destinationPath, options);
     }
@@ -114,22 +192,102 @@ export async function decompressArchive(archivePath: string, destinationPath: st
 }
 
 /**
- * Descomprime archivos .tar.gz con mejor manejo de progreso y errores
+ * Descompresión ZIP con streaming real (sin cargar todo en memoria)
  */
-async function decompressTarGz(archivePath: string, destinationPath: string, options: ServiceOptions = {}): Promise<void> {
+async function decompressZipStreaming(
+    archivePath: string,
+    destinationPath: string,
+    options: ServiceOptions = {}
+): Promise<string[]> {
+    // Usar yauzl para streaming real en lugar de decompress
+    const yauzl = await import('yauzl-promise');
+    const zipFile = await yauzl.open(archivePath);
+    const extractedFiles: string[] = [];
     const archiveSize = (await fs.promises.stat(archivePath)).size;
     let processedBytes = 0;
-    let entriesProcessed = 0;
-    
-    const readStream = fs.createReadStream(archivePath);
-    const gunzip = zlib.createGunzip();
+    let lastProgressUpdate = Date.now();
+
+    try {
+        await fs.promises.mkdir(destinationPath, { recursive: true });
+
+        for await (const entry of zipFile) {
+            const entryPath = path.join(destinationPath, entry.filename);
+            extractedFiles.push(entry.filename);
+
+            if (entry.filename.endsWith('/')) {
+                await fs.promises.mkdir(entryPath, { recursive: true });
+            } else {
+                await fs.promises.mkdir(path.dirname(entryPath), { recursive: true });
+                
+                const readStream = await entry.openReadStream();
+                const writeStream = fs.createWriteStream(entryPath, {
+                    highWaterMark: HIGH_WATER_MARK
+                });
+
+                await pipeline(readStream, writeStream);
+                processedBytes += entry.uncompressedSize;
+
+                // Throttle de progreso
+                const now = Date.now();
+                if (options.progressCallback && now - lastProgressUpdate > 100) {
+                    lastProgressUpdate = now;
+                    options.progressCallback({
+                        percentage: Math.min(99, (processedBytes / archiveSize) * 100),
+                        processedBytes,
+                        totalBytes: archiveSize,
+                        currentFile: entry.filename
+                    });
+                }
+            }
+        }
+
+        if (options.progressCallback) {
+            options.progressCallback({
+                percentage: 100,
+                processedBytes: archiveSize,
+                totalBytes: archiveSize,
+                currentFile: 'Completado'
+            });
+        }
+
+        return extractedFiles;
+    } finally {
+        await zipFile.close();
+    }
+}
+
+/**
+ * Descompresión TAR.GZ optimizada
+ */
+async function decompressTarGz(
+    archivePath: string, 
+    destinationPath: string, 
+    options: ServiceOptions = {}
+): Promise<void> {
+    const archiveSize = (await fs.promises.stat(archivePath)).size;
+    let processedBytes = 0;
+    let lastProgressUpdate = Date.now();
+
+    await fs.promises.mkdir(destinationPath, { recursive: true });
+
+    const readStream = fs.createReadStream(archivePath, {
+        highWaterMark: HIGH_WATER_MARK
+    });
+
+    const gunzip = zlib.createGunzip({
+        chunkSize: CHUNK_SIZE
+    });
+
     const extractor = tar.extract();
 
     return new Promise((resolve, reject) => {
         let isResolved = false;
+        let activeWrites = 0;
+        const maxConcurrentWrites = MAX_CONCURRENT_FILES;
+        const pendingEntries: Array<() => void> = [];
 
         const safeResolve = () => {
-            if (!isResolved) {
+            if (!isResolved && activeWrites === 0) {
                 isResolved = true;
                 resolve();
             }
@@ -138,68 +296,87 @@ async function decompressTarGz(archivePath: string, destinationPath: string, opt
         const safeReject = (error: Error) => {
             if (!isResolved) {
                 isResolved = true;
+                readStream.destroy();
+                gunzip.destroy();
+                extractor.destroy();
                 reject(error);
             }
         };
 
-        extractor.on('entry', (header, stream, next) => {
-            entriesProcessed++;
-            const entryPath = path.join(destinationPath, header.name);
-            
-            if (options.progressCallback && entriesProcessed % 5 === 0) {
-                options.progressCallback({
-                    percentage: Math.min(95, (processedBytes / archiveSize) * 100),
-                    processedBytes,
-                    totalBytes: archiveSize,
-                    currentFile: header.name,
-                });
+        const processNextEntry = () => {
+            if (pendingEntries.length > 0 && activeWrites < maxConcurrentWrites) {
+                const next = pendingEntries.shift();
+                next?.();
             }
+        };
 
-            if (header.type === 'directory') {
-                fs.promises.mkdir(entryPath, { recursive: true })
-                    .then(() => {
+        extractor.on('entry', (header, stream, next) => {
+            const entryPath = path.join(destinationPath, header.name);
+
+            const processEntry = async () => {
+                activeWrites++;
+                
+                try {
+                    if (header.type === 'directory') {
+                        await fs.promises.mkdir(entryPath, { recursive: true });
                         stream.resume();
-                        next();
-                    })
-                    .catch(safeReject);
-            } else {
-                fs.promises.mkdir(path.dirname(entryPath), { recursive: true })
-                    .then(() => {
-                        const writeStream = fs.createWriteStream(entryPath);
+                    } else {
+                        await fs.promises.mkdir(path.dirname(entryPath), { recursive: true });
                         
-                        writeStream.on('error', safeReject);
-                        stream.on('error', safeReject);
-                        
-                        stream.pipe(writeStream);
-                        
-                        writeStream.on('finish', () => {
-                            next();
+                        const writeStream = fs.createWriteStream(entryPath, {
+                            highWaterMark: HIGH_WATER_MARK
                         });
-                    })
-                    .catch(safeReject);
+
+                        await pipeline(stream, writeStream);
+                    }
+
+                    processedBytes += header.size || 0;
+
+                    // Throttle de progreso
+                    const now = Date.now();
+                    if (options.progressCallback && now - lastProgressUpdate > 100) {
+                        lastProgressUpdate = now;
+                        options.progressCallback({
+                            percentage: Math.min(99, (processedBytes / archiveSize) * 100),
+                            processedBytes,
+                            totalBytes: archiveSize,
+                            currentFile: header.name
+                        });
+                    }
+                } catch (err) {
+                    safeReject(err as Error);
+                } finally {
+                    activeWrites--;
+                    next();
+                    processNextEntry();
+                }
+            };
+
+            if (activeWrites < maxConcurrentWrites) {
+                processEntry();
+            } else {
+                pendingEntries.push(processEntry);
             }
-        });
-        
-        gunzip.on('data', (chunk) => {
-            processedBytes += chunk.length;
         });
 
         extractor.on('finish', () => {
-            if (options.progressCallback) {
-                options.progressCallback({
-                    percentage: 100,
-                    processedBytes: archiveSize,
-                    totalBytes: archiveSize,
-                    currentFile: 'Completado',
-                });
+            if (activeWrites === 0) {
+                if (options.progressCallback) {
+                    options.progressCallback({
+                        percentage: 100,
+                        processedBytes: archiveSize,
+                        totalBytes: archiveSize,
+                        currentFile: 'Completado'
+                    });
+                }
+                safeResolve();
             }
-            safeResolve();
         });
 
         extractor.on('error', safeReject);
         gunzip.on('error', safeReject);
         readStream.on('error', safeReject);
-        
+
         readStream.pipe(gunzip).pipe(extractor);
     });
 }

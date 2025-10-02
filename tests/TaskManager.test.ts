@@ -3,6 +3,7 @@ import { TaskManager } from '../src/index.js';
 import type { BackupResult } from '../src/index.js';
 import fs from 'fs';
 import path from 'path';
+import type { TaskStatus } from '../src/index.js';
 
 const TEST_DIR = './test-temp';
 const SOURCE_DIR = path.join(TEST_DIR, 'source');
@@ -55,7 +56,8 @@ describe('TaskManager with Promises', () => {
       expect(fs.existsSync(result.backupPath)).toBe(true);
 
       const task = taskManager.getTask(taskId);
-      expect(task?.status).toBe('completed');
+      expect(task).toBeDefined();
+      expect(task?.status).toBe('completed' as TaskStatus);
     });
 
     test('should reject promise when backup fails', async () => {
@@ -163,6 +165,7 @@ describe('TaskManager with Promises', () => {
       await new Promise(resolve => setTimeout(resolve, 100));
 
       expect(callbackCalled).toBe(true);
+      // @ts-ignore
       expect(callbackResult).toEqual(promiseResult);
     });
   });

@@ -21,7 +21,7 @@ import type {
     RestoreResult,
     ProgressData,
     DownloadOptions,
-    OnCompleteCallback
+    OnCompleteCallback,
 } from '../Types.js';
 
 const processPath = (...args: string[]) => path.join(process.cwd(), ...args);
@@ -183,6 +183,8 @@ export class TaskManager extends Emitter {
                 this._failTask(task, error);
                 throw error;
             });
+        // Evitar rechazos no manejados cuando el consumidor no espera la promesa
+        promise.catch(() => {});
 
         return { taskId: task.id, promise };
     }
@@ -233,6 +235,8 @@ export class TaskManager extends Emitter {
                 this._failTask(task, error);
                 throw error;
             });
+        // Evitar rechazos no manejados cuando el consumidor no espera la promesa
+        promise.catch(() => {});
 
         return { taskId: task.id, promise };
     }
@@ -271,6 +275,8 @@ export class TaskManager extends Emitter {
                 this._failTask(task, error);
                 throw error;
             });
+        // Evitar rechazos no manejados cuando el consumidor no espera la promesa
+        promise.catch(() => {});
 
         return { taskId: task.id, promise };
     }
@@ -310,6 +316,8 @@ export class TaskManager extends Emitter {
                 this._failTask(task, error);
                 throw error;
             });
+        // Evitar rechazos no manejados cuando el consumidor no espera la promesa
+        promise.catch(() => {});
 
         return { taskId: task.id, promise };
     }

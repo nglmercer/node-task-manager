@@ -5,6 +5,7 @@ import { TaskManager } from '../src/index.js';
 import type { BackupResult, RestoreResult } from '../src/index.js';
 import fs from 'fs';
 import path from 'path';
+import type { TaskStatus } from '../dist/Types.js';
 
 const TEST_DIR = './test-integration-promise';
 const SOURCE_DIR = path.join(TEST_DIR, 'source');
@@ -349,7 +350,7 @@ describe('TaskManager Integration Tests (Promise-based)', () => {
     taskIds.forEach(taskId => {
       const task = taskManager.getTask(taskId);
       expect(task).toBeDefined();
-      expect(task?.status).toBe('completed');
+      expect(task?.status).toBe('completed' as TaskStatus);
       expect(task?.progress).toBe(100);
     });
   });
