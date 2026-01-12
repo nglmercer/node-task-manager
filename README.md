@@ -293,7 +293,7 @@ The library now supports a flexible adapter pattern for compression/decompressio
 ### Available Adapters
 
 - `FflateZipAdapter`: ZIP compression & decompression using fflate (lightweight, fast, streaming)
-- `TarAdapter`: TAR/TAR.GZ compression & decompression using tar (streaming support)
+- `TarAdapter`: TAR/TAR.GZ compression & decompression using tar-stream (streaming support)
 
 ### Using Adapters
 

@@ -292,15 +292,9 @@ La librería ahora soporta un patrón de adaptador flexible para operaciones de 
 
 ### Adaptadores Disponibles
 
-**Adaptadores Principales (Recomendados):**
+**Adaptadores Principales:**
 - `FflateZipAdapter`: Compresión y descompresión ZIP usando fflate (ligero, rápido, con streaming)
-- `TarAdapter`: Compresión y descompresión TAR/TAR.GZ usando tar (soporte streaming)
-
-**Adaptadores Legacy (Mantenidos por compatibilidad):**
-- `ArchiverZipAdapter`: Compresión ZIP usando archiver
-- `ArchiverTarAdapter`: Compresión TAR/TAR.GZ usando archiver
-- `YauzlZipAdapter`: Descompresión ZIP usando yauzl-promise
-- `TarStreamAdapter`: Descompresión TAR/TAR.GZ usando tar-stream
+- `TarAdapter`: Compresión y descompresión TAR/TAR.GZ usando tar-stream (soporte streaming)
 
 ### Usar Adaptadores
 
