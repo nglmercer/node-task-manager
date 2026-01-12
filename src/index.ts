@@ -38,10 +38,9 @@ export {
 } from './adapters/CompressionAdapterFactory.js';
 
 export {
-  ArchiverZipAdapter,
-  ArchiverTarAdapter,
-  YauzlZipAdapter,
-  TarStreamAdapter
+  // Adaptadores con fflate y tar (ligeros y con streaming)
+  FflateZipAdapter,
+  TarAdapter
 } from './adapters/index.js';
 
 export {

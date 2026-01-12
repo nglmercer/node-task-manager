@@ -1,10 +1,9 @@
 // src/services/CompressionService.ts
 import type { ICompressionAdapter, CompressionOptions } from '../adapters/ICompressionAdapter.js';
 import { CompressionAdapterFactory, AdapterOperation } from '../adapters/CompressionAdapterFactory.js';
-import { ArchiverZipAdapter } from '../adapters/ArchiverZipAdapter.js';
-import { ArchiverTarAdapter } from '../adapters/ArchiverTarAdapter.js';
-import { YauzlZipAdapter } from '../adapters/YauzlZipAdapter.js';
-import { TarStreamAdapter } from '../adapters/TarStreamAdapter.js';
+// Adaptadores con fflate y tar (ligeros y con streaming)
+import { FflateZipAdapter } from '../adapters/FflateZipAdapter.js';
+import { TarAdapter } from '../adapters/TarAdapter.js';
 import type { ProgressData } from '../Types.js';
 
 /**
@@ -33,15 +32,12 @@ export class CompressionService {
   constructor(customAdapters: ICompressionAdapter[] = []) {
     // Crear factory con adaptadores por defecto y personalizados
     // IMPORTANTE: Orden de adaptadores por prioridad
-    // Los adaptadores de descompresión tienen prioridad para descomprimir
     this.factory = new CompressionAdapterFactory([
       // Adaptadores personalizados (mayor prioridad)
       ...customAdapters,
-      // Adaptadores por defecto (ordenados por prioridad)
-      new YauzlZipAdapter(),      // ZIP decompression
-      new TarStreamAdapter(),         // TAR decompression
-      new ArchiverZipAdapter(),       // ZIP compression
-      new ArchiverTarAdapter(),       // TAR compression
+      // Adaptadores por defecto (ligeros y con streaming)
+      new FflateZipAdapter(),          // ZIP compression & decompression (fflate)
+      new TarAdapter(),                // TAR compression & decompression (tar)
     ]);
   }
 

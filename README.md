@@ -292,23 +292,21 @@ The library now supports a flexible adapter pattern for compression/decompressio
 
 ### Available Adapters
 
-- `ArchiverZipAdapter`: ZIP compression using archiver
-- `ArchiverTarAdapter`: TAR/TAR.GZ compression using archiver
-- `YauzlZipAdapter`: ZIP decompression using yauzl-promise
-- `TarStreamAdapter`: TAR/TAR.GZ decompression using tar-stream
+- `FflateZipAdapter`: ZIP compression & decompression using fflate (lightweight, fast, streaming)
+- `TarAdapter`: TAR/TAR.GZ compression & decompression using tar (streaming support)
 
 ### Using Adapters
 
 ```typescript
-import { CompressionService, ArchiverZipAdapter } from 'node-task-manager';
+import { CompressionService, FflateZipAdapter } from 'node-task-manager';
 
 // Use default adapters
 const service = new CompressionService();
 await service.compressDirectory('./src', './backup.zip');
 
-// Or inject custom adapters
+// Or use specific adapter
 const customService = new CompressionService([
-  new ArchiverZipAdapter()
+  new FflateZipAdapter()
 ]);
 await customService.compressDirectory('./src', './backup.zip');
 ```

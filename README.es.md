@@ -292,6 +292,11 @@ La librería ahora soporta un patrón de adaptador flexible para operaciones de 
 
 ### Adaptadores Disponibles
 
+**Adaptadores Principales (Recomendados):**
+- `FflateZipAdapter`: Compresión y descompresión ZIP usando fflate (ligero, rápido, con streaming)
+- `TarAdapter`: Compresión y descompresión TAR/TAR.GZ usando tar (soporte streaming)
+
+**Adaptadores Legacy (Mantenidos por compatibilidad):**
 - `ArchiverZipAdapter`: Compresión ZIP usando archiver
 - `ArchiverTarAdapter`: Compresión TAR/TAR.GZ usando archiver
 - `YauzlZipAdapter`: Descompresión ZIP usando yauzl-promise
@@ -300,15 +305,15 @@ La librería ahora soporta un patrón de adaptador flexible para operaciones de 
 ### Usar Adaptadores
 
 ```typescript
-import { CompressionService, ArchiverZipAdapter } from 'node-task-manager';
+import { CompressionService, FflateZipAdapter } from 'node-task-manager';
 
-// Usar adaptadores por defecto
+// Usar adaptadores por defecto (FflateZipAdapter y TarAdapter se usan por defecto)
 const servicio = new CompressionService();
 await servicio.compressDirectory('./src', './backup.zip');
 
-// O inyectar adaptadores personalizados
+// O usar un adaptador específico
 const servicioPersonalizado = new CompressionService([
-  new ArchiverZipAdapter()
+  new FflateZipAdapter()
 ]);
 await servicioPersonalizado.compressDirectory('./src', './backup.zip');
 ```
