@@ -47,9 +47,7 @@
   },
   "dependencies": {
     "archiver": "^7.0.1",
-    "axios": "^1.10.0",
     "tar-stream": "^3.1.7",
-    "uuid": "^11.1.0",
     "yauzl-promise": "^4.0.0"
   },
   "peerDependencies": {

@@ -60,6 +60,7 @@ export interface AssetManagerOptions {
     downloadPath: string;
     unpackPath: string;
     backupPath: string;
+    userAgent?: string;
 }
 
 export interface DownloadOptions {

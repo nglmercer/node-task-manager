@@ -1,5 +1,5 @@
 // src/Task.ts
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { TaskStatus, TaskType  } from '../Types.js';
 import type { ITask, ResultsTypes, OnCompleteCallback } from '../Types.js';
 
@@ -22,7 +22,7 @@ export class Task implements ITask {
         payload: { [key: string]: any },
         onCompleteCallback?: OnCompleteCallback<any>
     ) {
-        this.id = uuidv4();
+        this.id = randomUUID();
         this.type = type;
         this.payload = payload;
         this.status = TaskStatus.PENDING;

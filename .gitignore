@@ -33,3 +33,4 @@ temp/
 tmp/
 dist/
 bun.lock
+test-temp/**

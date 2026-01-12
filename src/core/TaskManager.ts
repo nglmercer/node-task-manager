@@ -2,12 +2,12 @@
 
 import fs from 'fs';
 import path from 'path';
-import axios from 'axios';
 import { pipeline } from 'stream/promises';
 import { Emitter } from '../utils/Emitter.js';
 import { Task } from './Task.js';
 import * as CompressionService from '../services/CompressionService.js';
 import { TaskStatus, TaskType } from '../Types.js';
+import { randomUUID } from 'crypto';
 import type { 
     ITask, 
     DownloadResult, 
@@ -39,7 +39,10 @@ interface TaskOperation<T> {
     taskId: string;
     promise: Promise<T>;
 }
-
+const generateUserAgent = (version: string) => {
+    const userAgent = `TaskManager-download/${version}`;
+    return userAgent;
+}
 export class TaskManager extends Emitter {
     private options: Required<AssetManagerOptions>;
     private tasks: Map<string, Task> = new Map();
@@ -54,6 +57,7 @@ export class TaskManager extends Emitter {
             downloadPath: options.downloadPath,
             unpackPath: options.unpackPath,
             backupPath: options.backupPath,
+            userAgent: options.userAgent || generateUserAgent(randomUUID()),
         };
 
         Object.values(this.options).forEach(dir => 
@@ -193,23 +197,37 @@ export class TaskManager extends Emitter {
         this._startTask(task);
         const { url, filePath } = task.payload;
 
-        const response = await axios({
-            method: 'GET', url, responseType: 'stream',
-            headers: { 'User-Agent': 'My-TS-Library/1.0' },
+        const response = await fetch(url, {
+            headers: { 'User-Agent': this.options.userAgent },
         });
 
-        const totalBytes = parseInt(response.headers['content-length'], 10) || 0;
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const totalBytes = parseInt(response.headers.get('content-length') || '0', 10);
         let processedBytes = 0;
 
-        response.data.on('data', (chunk: Buffer) => {
-            processedBytes += chunk.length;
-            if (totalBytes > 0) {
-                const percentage = (processedBytes / totalBytes) * 100;
-                this._updateTaskProgress(task, { percentage, processedBytes, totalBytes });
+        const body = response.body;
+        if (!body) {
+            throw new Error('Response body is null');
+        }
+
+        // Create a transform stream to track progress
+        const { Transform } = await import('stream');
+        const taskManager = this; // Capture reference to TaskManager instance
+        const progressStream = new Transform({
+            transform(chunk: Buffer, encoding, callback) {
+                processedBytes += chunk.length;
+                if (totalBytes > 0) {
+                    const percentage = (processedBytes / totalBytes) * 100;
+                    taskManager._updateTaskProgress(task, { percentage, processedBytes, totalBytes });
+                }
+                callback(null, chunk);
             }
         });
 
-        await pipeline(response.data, fs.createWriteStream(filePath));
+        await pipeline(body, progressStream, fs.createWriteStream(filePath));
         const finalStats = fs.statSync(filePath);
         this._completeTask(task, { filePath, size: finalStats.size } as DownloadResult);
     }

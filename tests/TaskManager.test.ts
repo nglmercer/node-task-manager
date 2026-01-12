@@ -231,7 +231,7 @@ describe('TaskManager with Promises', () => {
     test('should handle Promise.allSettled for partial failures', async () => {
       const operations = [
         taskManager.createBackup(SOURCE_DIR, { outputFilename: 'success-1.zip', useZip: true }),
-        taskManager.createBackup('/invalid/path', { outputFilename: 'fail-1.zip', useZip: true }),
+        taskManager.createBackup('/nonexistent_directory_that_does_not_exist_12345', { outputFilename: 'fail-1.zip', useZip: true }),
         taskManager.createBackup(SOURCE_DIR, { outputFilename: 'success-2.zip', useZip: true }),
       ];
 
