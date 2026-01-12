@@ -15,6 +15,8 @@ A robust, event-driven, asynchronous task manager for Node.js, designed to easil
 - **File Downloads**: Download files from URLs with progress reporting
 - **Backups (Compression)**: Compress directories into `.zip` or `.tar.gz` format
 - **Restoration (Decompression)**: Decompress `.zip` and `.tar.gz` files
+- **Adapter Pattern**: Flexible compression/decompression with pluggable adapters
+- **Custom Adapters**: Create and inject your own compression implementations
 - **Detailed Progress Reporting**: Get percentages, processed bytes, and current file being processed
 - **Optimized for Large Files**: Memory-efficient streaming for multi-GB archives
 - **Written in TypeScript**: Fully typed for better development experience
@@ -278,6 +280,64 @@ Subscribe to events using `taskManager.on(event, callback)`:
     updatedAt: Date;
 }
 ```
+
+## Adapter System (NEW)
+
+The library now supports a flexible adapter pattern for compression/decompression operations. This allows you to:
+
+- Use different compression libraries without modifying the core code
+- Create custom adapters for specific formats (RAR, 7z, etc.)
+- Mock adapters for testing
+- Extend functionality without breaking changes
+
+### Available Adapters
+
+- `ArchiverZipAdapter`: ZIP compression using archiver
+- `ArchiverTarAdapter`: TAR/TAR.GZ compression using archiver
+- `YauzlZipAdapter`: ZIP decompression using yauzl-promise
+- `TarStreamAdapter`: TAR/TAR.GZ decompression using tar-stream
+
+### Using Adapters
+
+```typescript
+import { CompressionService, ArchiverZipAdapter } from 'node-task-manager';
+
+// Use default adapters
+const service = new CompressionService();
+await service.compressDirectory('./src', './backup.zip');
+
+// Or inject custom adapters
+const customService = new CompressionService([
+  new ArchiverZipAdapter()
+]);
+await customService.compressDirectory('./src', './backup.zip');
+```
+
+### Creating Custom Adapters
+
+```typescript
+import type { ICompressionAdapter } from 'node-task-manager';
+
+class MyCustomAdapter implements ICompressionAdapter {
+  async compress(sourcePath: string, outputPath: string, options?: any): Promise<void> {
+    // Your compression logic
+  }
+
+  async decompress(archivePath: string, destinationPath: string, options?: any): Promise<string[]> {
+    // Your decompression logic
+    return [];
+  }
+
+  async canHandle(filePath: string): Promise<boolean> {
+    return filePath.endsWith('.myformat');
+  }
+}
+
+// Use your custom adapter
+const service = new CompressionService([new MyCustomAdapter()]);
+```
+
+For detailed documentation on adapters, see [docs/ADAPTERS_GUIDE.md](docs/ADAPTERS_GUIDE.md).
 
 ## Performance Considerations
 

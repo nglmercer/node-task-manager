@@ -2,12 +2,12 @@
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
-import decompress from 'decompress';
 import { pipeline } from 'stream/promises';
 import { Emitter } from '../utils/Emitter.js';
 import { Task } from './Task.js';
 import { TaskStatus, TaskType  } from '../Types.js';
 import type { ITask, DownloadResult, UnpackResult,AssetManagerOptions,TaskEvents,UnpackOptions } from '../Types.js';
+import { decompressArchive } from '../services/CompressionService.js';
 
 export class AssetManager extends Emitter {
     private options: Required<AssetManagerOptions>;
@@ -169,8 +169,14 @@ export class AssetManager extends Emitter {
         const { archivePath, unpackDir } = task.payload;
         await fs.promises.mkdir(unpackDir, { recursive: true });
 
-        await decompress(archivePath, unpackDir);
-        this._updateTaskProgress(task, 90);
+        // Usar el servicio de compresión con adaptadores
+        await decompressArchive(archivePath, unpackDir, {
+            progressCallback: (data) => {
+                // Mapear progreso de 10-90%
+                const progress = 10 + (data.percentage * 0.8);
+                this._updateTaskProgress(task, progress, { currentFile: data.currentFile });
+            }
+        });
 
         if (options.deleteAfterUnpack) {
             await fs.promises.unlink(archivePath);

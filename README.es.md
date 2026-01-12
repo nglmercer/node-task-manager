@@ -15,6 +15,8 @@ Un gestor de tareas robusto, basado en eventos y asíncrono para Node.js, diseñ
 - **Descargas de Archivos**: Descarga archivos desde URLs con reporte de progreso
 - **Backups (Compresión)**: Comprime directorios en formato `.zip` o `.tar.gz`
 - **Restauración (Descompresión)**: Descomprime archivos `.zip` y `.tar.gz`
+- **Patrón Adapter**: Compresión/descompresión flexible con adaptadores intercambiables
+- **Adaptadores Personalizados**: Crea e inyecta tus propias implementaciones de compresión
 - **Reporte Detallado de Progreso**: Obtén porcentajes, bytes procesados y archivo actual en proceso
 - **Optimizado para Archivos Grandes**: Streaming eficiente en memoria para archivos de múltiples GB
 - **Escrito en TypeScript**: Completamente tipado para mejor experiencia de desarrollo
@@ -278,6 +280,64 @@ Suscríbete a eventos usando `taskManager.on(evento, callback)`:
     updatedAt: Date;
 }
 ```
+
+## Sistema de Adaptadores (NUEVO)
+
+La librería ahora soporta un patrón de adaptador flexible para operaciones de compresión/descompresión. Esto te permite:
+
+- Usar diferentes librerías de compresión sin modificar el código central
+- Crear adaptadores personalizados para formatos específicos (RAR, 7z, etc.)
+- Crear mocks de adaptadores para testing
+- Extender funcionalidad sin cambios rupturantes
+
+### Adaptadores Disponibles
+
+- `ArchiverZipAdapter`: Compresión ZIP usando archiver
+- `ArchiverTarAdapter`: Compresión TAR/TAR.GZ usando archiver
+- `YauzlZipAdapter`: Descompresión ZIP usando yauzl-promise
+- `TarStreamAdapter`: Descompresión TAR/TAR.GZ usando tar-stream
+
+### Usar Adaptadores
+
+```typescript
+import { CompressionService, ArchiverZipAdapter } from 'node-task-manager';
+
+// Usar adaptadores por defecto
+const servicio = new CompressionService();
+await servicio.compressDirectory('./src', './backup.zip');
+
+// O inyectar adaptadores personalizados
+const servicioPersonalizado = new CompressionService([
+  new ArchiverZipAdapter()
+]);
+await servicioPersonalizado.compressDirectory('./src', './backup.zip');
+```
+
+### Crear Adaptadores Personalizados
+
+```typescript
+import type { ICompressionAdapter } from 'node-task-manager';
+
+class MiAdaptadorPersonalizado implements ICompressionAdapter {
+  async compress(sourcePath: string, outputPath: string, options?: any): Promise<void> {
+    // Tu lógica de compresión
+  }
+
+  async decompress(archivePath: string, destinationPath: string, options?: any): Promise<string[]> {
+    // Tu lógica de descompresión
+    return [];
+  }
+
+  async canHandle(filePath: string): Promise<boolean> {
+    return filePath.endsWith('.miformato');
+  }
+}
+
+// Usar tu adaptador personalizado
+const servicio = new CompressionService([new MiAdaptadorPersonalizado()]);
+```
+
+Para documentación detallada sobre adaptadores, consulta [docs/ADAPTERS_GUIDE.md](docs/ADAPTERS_GUIDE.md).
 
 ## Consideraciones de Rendimiento
 

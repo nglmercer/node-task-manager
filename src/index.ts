@@ -22,6 +22,36 @@ export type {
 
 export { TaskStatus, TaskType } from './Types.js';
 
-// Nota: No exportamos Task, Emitter o CompressionService directamente,
+// --- Adaptadores de Compresión ---
+// Exportamos los adaptadores para que los usuarios puedan crear sus propias implementaciones
+export type {
+  ICompressionAdapter,
+  CompressionOptions,
+  FileTypeDetection
+} from './adapters/ICompressionAdapter.js';
+
+export {
+  CompressionAdapterFactory,
+  getDefaultFactory,
+  resetDefaultFactory,
+  AdapterOperation
+} from './adapters/CompressionAdapterFactory.js';
+
+export {
+  ArchiverZipAdapter,
+  ArchiverTarAdapter,
+  YauzlZipAdapter,
+  TarStreamAdapter
+} from './adapters/index.js';
+
+export {
+  CompressionService,
+  getDefaultCompressionService,
+  resetDefaultCompressionService,
+  compressDirectory,
+  decompressArchive
+} from './services/CompressionService.js';
+
+// Nota: No exportamos Task o Emitter directamente,
 // ya que son detalles de implementación. Los usuarios interactúan a través de TaskManager.
 // Esto mantiene la API pública más limpia y fácil de usar.
